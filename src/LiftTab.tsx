@@ -20,6 +20,7 @@ import {
 } from './plan'
 import { plural, prettyDate } from './helpers'
 import { LineChart } from './LineChart'
+import { TodayPlan } from './WorkoutPlan'
 import { Photo, Modal, PhotoButton } from './ui'
 
 function useLibrary(): { list: ExerciseDef[]; lookup: (name: string) => ExerciseDef | undefined } {
@@ -51,6 +52,8 @@ export function LiftTab() {
   return (
     <div className="page">
       <h1>Lift</h1>
+
+      <TodayPlan lib={lib} onOpen={setOpen} />
 
       <div className="row">
         <button className="btn" onClick={() => setPicking(true)}>

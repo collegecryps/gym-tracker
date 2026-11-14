@@ -617,3 +617,63 @@ summary {
   padding: 12px 14px;
   border-top: 1px solid var(--line);
 }
+
+/* Today's plan */
+.day-pick {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.plan-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.small-btn {
+  padding: 8px 10px;
+  font-size: 14px;
+}
+.plan-muscle {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+.plan-muscle-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+.plan-ex {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.plan-ex.done {
+  border-color: rgba(74, 222, 128, 0.4);
+}
+.plan-ex-main {
+  text-align: left;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.plan-target {
+  color: var(--accent);
+}
+.chip.on {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+.sets-count {
+  min-width: 56px;
+  text-align: center;
+}

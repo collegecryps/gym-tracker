@@ -335,6 +335,80 @@ test('food history: trends, and tap a day to open it', async ({ page }) => {
   await expect(page.locator('.big-number')).toHaveText(/^1750\s*calories left$/)
 })
 
+test('plan a push day, log from the plan, swap an exercise', async ({ page }) => {
+  await onboard(page)
+  await seedSets(page, 3, 'Bench Press', 'Chest', [[135, 10, 4], [155, 8], [175, 6]])
+  await page.locator('.tabbar').getByText('Lift').click()
+  await expect(page.getByText('What are you hitting today?')).toBeVisible()
+  await page.getByRole('button', { name: 'Push', exact: true }).click()
+
+  const plan = page.locator('.plan')
+  await expect(plan.locator('h3')).toHaveText('Push day')
+  await expect(plan.locator('.plan-muscle-head').first()).toContainText('Chest')
+  await expect(plan.locator('.plan-muscle-head').first()).toContainText('2 this week → 8 after today')
+  // Your own lift leads; target from last session
+  const bench = plan.locator('.plan-ex', { hasText: 'Bench Press' }).first()
+  await expect(bench).toContainText('Pyramid: warm up, then 3 working sets')
+  await expect(bench).toContainText('Last top set: 175 × 6. Beat it: 175 × 7+')
+  await expect(plan.locator('.plan-ex', { hasText: 'Overhead Triceps Extension' })).toBeVisible()
+  await expect(plan.locator('.plan-head')).toContainText('0/14 sets')
+
+  // Tap to log
+  await bench.locator('.plan-ex-main').click()
+  await expect(page.locator('.modal h2')).toHaveText('Bench Press')
+  await page.getByRole('button', { name: 'Log set' }).click()
+  await page.getByRole('button', { name: 'Close' }).click()
+  await expect(bench).toContainText('1/3 done')
+  await expect(plan.locator('.plan-head')).toContainText('1/14 sets')
+
+  // Swap triceps move; the choice sticks
+  await page.getByRole('button', { name: 'Swap Overhead Triceps Extension' }).click()
+  await page.locator('.modal .list-item', { hasText: 'Skull Crusher' }).click()
+  await expect(plan.locator('.plan-ex', { hasText: 'Skull Crusher' })).toBeVisible()
+  await expect(plan.locator('.plan-ex', { hasText: 'Overhead Triceps Extension' })).toHaveCount(0)
+  await page.reload()
+  await page.locator('.tabbar').getByText('Lift').click()
+  await expect(page.locator('.plan-ex', { hasText: 'Skull Crusher' })).toBeVisible()
+
+  // Change day
+  await page.getByRole('button', { name: 'Change day' }).click()
+  await page.getByRole('button', { name: 'Legs', exact: true }).click()
+  await expect(page.locator('.plan h3')).toHaveText('Legs day')
+  await expect(page.locator('.plan-ex', { hasText: 'Seated Leg Curl' })).toBeVisible()
+})
+
+test('custom day: pick muscles and set counts', async ({ page }) => {
+  await onboard(page)
+  await page.locator('.tabbar').getByText('Lift').click()
+  await page.getByRole('button', { name: 'Custom', exact: true }).click()
+  await expect(page.locator('.modal h2')).toHaveText('Customize Custom day')
+  await page.locator('.modal .chip', { hasText: 'Shoulders' }).click()
+  await page.locator('.modal .chip', { hasText: 'Biceps' }).click()
+  await page.getByRole('button', { name: 'Biceps more sets' }).click()
+  await page.getByRole('button', { name: 'Save' }).click()
+  const plan = page.locator('.plan')
+  await expect(plan.locator('h3')).toHaveText('Custom day')
+  await expect(plan.locator('.plan-muscle-head')).toHaveCount(2)
+  // 5 biceps sets split across two exercises
+  await expect(plan.locator('.plan-ex', { hasText: 'Incline Dumbbell Curl' })).toContainText('3 sets × 6–12 reps')
+  await expect(plan.locator('.plan-ex', { hasText: 'Preacher Curl' })).toContainText('2 sets × 6–12 reps')
+  await expect(plan.locator('.plan-ex', { hasText: 'Cable Lateral Raise' })).toContainText('4 sets × 10–20 reps')
+})
+
+test('customize push day: drop a muscle', async ({ page }) => {
+  await onboard(page)
+  await page.locator('.tabbar').getByText('Lift').click()
+  await page.getByRole('button', { name: 'Push', exact: true }).click()
+  await page.getByRole('button', { name: 'Customize' }).click()
+  await page.locator('.modal .chip', { hasText: 'Triceps' }).click()
+  await page.getByRole('button', { name: 'Save' }).click()
+  await expect(page.locator('.plan .plan-muscle-head')).toHaveCount(2)
+  await page.getByRole('button', { name: 'Customize' }).click()
+  await page.getByRole('button', { name: 'Reset' }).click()
+  await page.getByRole('button', { name: 'Save' }).click()
+  await expect(page.locator('.plan .plan-muscle-head')).toHaveCount(3)
+})
+
 test('add a custom exercise', async ({ page }) => {
   await onboard(page)
   await page.locator('.tabbar').getByText('Lift').click()
@@ -460,7 +534,7 @@ test('restore rejects a file that is not a backup', async ({ page }) => {
 test('science sources are listed with links', async ({ page }) => {
   await onboard(page)
   await page.locator('.tabbar').getByText('More').click()
-  await expect(page.locator('details')).toHaveCount(8)
+  await expect(page.locator('details')).toHaveCount(10)
   await page.getByText('10–20 hard sets per muscle per week').click()
   await expect(page.getByRole('link', { name: /Schoenfeld, Ogborn & Krieger \(2017\)/ })).toBeVisible()
 })

@@ -53,12 +53,27 @@ export interface CustomExercise {
   secondary?: string[]
 }
 
+/** A workout day template (Push, Pull, Legs, Custom), customized by the user. */
+export interface DayTemplate {
+  id: string // 'push' | 'pull' | 'legs' | 'custom'
+  muscles: { name: string; sets: number }[]
+  pinned: Record<string, string[]> // muscle -> preferred exercises, in order
+}
+
+/** Which template the user picked for a given day. */
+export interface DayPlan {
+  date: string
+  templateId: string
+}
+
 export const db = new Dexie('gym-tracker') as Dexie & {
   profile: EntityTable<Profile, 'id'>
   foods: EntityTable<Food, 'id'>
   weighIns: EntityTable<WeighIn, 'id'>
   sets: EntityTable<LiftSet, 'id'>
   exercises: EntityTable<CustomExercise, 'name'>
+  templates: EntityTable<DayTemplate, 'id'>
+  dayPlans: EntityTable<DayPlan, 'date'>
 }
 
 db.version(1).stores({
@@ -67,6 +82,11 @@ db.version(1).stores({
   weighIns: '++id, &date',
   sets: '++id, date, exercise',
   exercises: 'name',
+})
+
+db.version(2).stores({
+  templates: 'id',
+  dayPlans: 'date',
 })
 
 export function todayStr(d = new Date()): string {
@@ -98,6 +118,8 @@ export async function exportBackup(): Promise<Blob> {
     weighIns: await db.weighIns.toArray(),
     sets: await db.sets.toArray(),
     exercises: await db.exercises.toArray(),
+    templates: await db.templates.toArray(),
+    dayPlans: await db.dayPlans.toArray(),
   }
   return new Blob([JSON.stringify(data)], { type: 'application/json' })
 }
@@ -105,12 +127,15 @@ export async function exportBackup(): Promise<Blob> {
 export async function importBackup(file: File): Promise<void> {
   const data = JSON.parse(await file.text())
   if (data?.version !== 1) throw new Error('Not a backup file from this app')
-  await db.transaction('rw', [db.profile, db.foods, db.weighIns, db.sets, db.exercises], async () => {
-    await Promise.all([db.profile.clear(), db.foods.clear(), db.weighIns.clear(), db.sets.clear(), db.exercises.clear()])
+  const tables = [db.profile, db.foods, db.weighIns, db.sets, db.exercises, db.templates, db.dayPlans]
+  await db.transaction('rw', tables, async () => {
+    await Promise.all(tables.map((t) => t.clear()))
     if (data.profile) await db.profile.put(data.profile)
     await db.foods.bulkPut(data.foods ?? [])
     await db.weighIns.bulkPut(data.weighIns ?? [])
     await db.sets.bulkPut(data.sets ?? [])
     await db.exercises.bulkPut(data.exercises ?? [])
+    await db.templates.bulkPut(data.templates ?? [])
+    await db.dayPlans.bulkPut(data.dayPlans ?? [])
   })
 }

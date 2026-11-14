@@ -36,6 +36,8 @@ React + TypeScript + Vite, `vite-plugin-pwa`, Dexie (IndexedDB).
 
 ## Files
 
-- `src/plan.ts` calorie/macro targets, adaptive maintenance, volume, progression.
+- `src/plan.ts` calorie/macro targets, adaptive maintenance, volume, progression, history helpers.
+- `src/program.ts` workout builder (Push/Pull/Legs/Custom templates → exercises + sets for today).
+  Owner trains push/pull/legs with ascending pyramids on the first big lift.
 - `src/ai.ts` Gemini calls (food + equipment) and photo shrinking.
 - `src/db.ts` schema + backup.

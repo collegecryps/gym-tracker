@@ -79,6 +79,32 @@ export const PRINCIPLES: Principle[] = [
     ],
   },
   {
+    rule: 'Favor exercises that load the muscle while it is stretched',
+    detail:
+      'In head-to-head studies, overhead triceps extensions grew the triceps far more than pushdowns, and seated leg curls (hips bent, hamstrings stretched) grew the hamstrings more than lying leg curls. When you have no history on a muscle, the workout builder picks these first. Lifts you already do still come first so you have numbers to beat.',
+    sources: [
+      {
+        cite: 'Maeo et al. (2023), Eur J Sport Sci: overhead vs. neutral arm position triceps training',
+        url: 'https://pubmed.ncbi.nlm.nih.gov/?term=Triceps%20brachii%20hypertrophy%20is%20substantially%20greater%20after%20elbow%20extension%20training%20performed%20in%20the%20overhead%20versus%20neutral%20arm%20position',
+      },
+      {
+        cite: 'Maeo et al. (2021), Med Sci Sports Exerc: seated vs. prone leg curl',
+        url: 'https://pubmed.ncbi.nlm.nih.gov/?term=Greater%20Hamstrings%20Muscle%20Hypertrophy%20but%20Similar%20Damage%20Protection%20after%20Training%20at%20Long%20versus%20Short%20Muscle%20Lengths',
+      },
+    ],
+  },
+  {
+    rule: 'The split matters less than weekly sets',
+    detail:
+      'Push/pull/legs, upper/lower and full body build similar muscle when weekly sets per muscle match. Run push/pull/legs twice a week and each muscle gets trained twice. The workout builder sets about 6 sets for big muscles per session, so a full week lands near 12, and it trims or skips a muscle that has already hit 20.',
+    sources: [
+      {
+        cite: 'Schoenfeld, Grgic & Krieger (2019), J Sports Sci: frequency with volume equated',
+        url: 'https://pubmed.ncbi.nlm.nih.gov/?term=How%20many%20times%20per%20week%20should%20a%20muscle%20be%20trained%20to%20maximize%20muscle%20hypertrophy%20Schoenfeld',
+      },
+    ],
+  },
+  {
     rule: 'Protein: about 1 g per lb of bodyweight',
     detail:
       'Gains from protein level off around 1.6 g/kg (0.73 g/lb), with the upper confidence limit at 2.2 g/kg (1 g/lb). The app targets the upper end so you are covered.',
