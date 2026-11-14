@@ -302,3 +302,35 @@ export function nextSetPrefill(lastSets: LiftSet[], todaySets: LiftSet[]): { wei
     ? { weightLb: prev.weightLb + weightStep(prev.weightLb) * 2, reps: Math.max(1, prev.reps - 2) }
     : { weightLb: prev.weightLb, reps: prev.reps }
 }
+
+// ---------- History & progress ----------
+
+export interface Workout {
+  date: string
+  exercises: { name: string; sets: LiftSet[] }[]
+}
+
+/** Group sets into workouts by day (newest first), exercises in the order they were done. */
+export function workoutsByDay(sets: LiftSet[]): Workout[] {
+  const days = new Map<string, LiftSet[]>()
+  for (const s of sets) days.set(s.date, [...(days.get(s.date) ?? []), s])
+  return [...days]
+    .sort(([a], [b]) => b.localeCompare(a))
+    .map(([date, daySets]) => {
+      const byEx = new Map<string, LiftSet[]>()
+      for (const s of [...daySets].sort((a, b) => a.time - b.time)) byEx.set(s.exercise, [...(byEx.get(s.exercise) ?? []), s])
+      return { date, exercises: [...byEx].map(([name, exSets]) => ({ name, sets: exSets })) }
+    })
+}
+
+/** One point per session: the best estimated 1-rep max that day, oldest first. */
+export function strengthProgress(exerciseSets: LiftSet[]): { date: string; value: number; note: string }[] {
+  const best = new Map<string, LiftSet>()
+  for (const s of exerciseSets) {
+    const b = best.get(s.date)
+    if (!b || e1rm(s.weightLb, s.reps) > e1rm(b.weightLb, b.reps)) best.set(s.date, s)
+  }
+  return [...best]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, s]) => ({ date, value: Math.round(e1rm(s.weightLb, s.reps)), note: `${s.weightLb} × ${s.reps}` }))
+}

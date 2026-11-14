@@ -1,8 +1,10 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useState } from 'react'
 import { analyzeFood, shrinkImage } from './ai'
-import { db, todayStr, type Food, type Profile } from './db'
-import { prettyDate, shiftDate, useTargets } from './helpers'
+import { daysAgoStr, db, todayStr, type Food, type Profile } from './db'
+import { LineChart } from './LineChart'
+import type { Targets } from './plan'
+import { plural, prettyDate, shiftDate, useTargets } from './helpers'
 import { Bar, Photo, Modal, PhotoButton } from './ui'
 
 type Draft = Omit<Food, 'id' | 'calories' | 'protein' | 'carbs' | 'fat'> & {
@@ -20,6 +22,7 @@ function toDraft(f: Food): Draft {
 export function FoodTab({ profile }: { profile: Profile }) {
   const [date, setDate] = useState(todayStr())
   const [draft, setDraft] = useState<Draft | null>(null)
+  const [showHistory, setShowHistory] = useState(false)
   const targets = useTargets(profile)
   const foods = useLiveQuery(() => db.foods.where('date').equals(date).sortBy('time'), [date])
 
@@ -45,6 +48,9 @@ export function FoodTab({ profile }: { profile: Profile }) {
           ›
         </button>
       </div>
+      <button className="btn ghost" onClick={() => setShowHistory(true)}>
+        📅 History & trends
+      </button>
 
       {targets && (
         <div className="card">
@@ -82,6 +88,16 @@ export function FoodTab({ profile }: { profile: Profile }) {
         ))}
       </div>
 
+      {showHistory && targets && (
+        <FoodHistory
+          targets={targets}
+          onClose={() => setShowHistory(false)}
+          onPick={(d) => {
+            setDate(d)
+            setShowHistory(false)
+          }}
+        />
+      )}
       {draft && <FoodEditor profile={profile} draft={draft} onClose={() => setDraft(null)} />}
     </div>
   )
@@ -210,6 +226,51 @@ function FoodEditor({ profile, draft: initial, onClose }: { profile: Profile; dr
           Save
         </button>
       </div>
+    </Modal>
+  )
+}
+
+function FoodHistory({ targets, onPick, onClose }: { targets: Targets; onPick: (date: string) => void; onClose: () => void }) {
+  const [shown, setShown] = useState(30)
+  const foods = useLiveQuery(() => db.foods.toArray(), [])
+  const days = new Map<string, { calories: number; protein: number; items: number }>()
+  for (const f of foods ?? []) {
+    const d = days.get(f.date) ?? { calories: 0, protein: 0, items: 0 }
+    days.set(f.date, { calories: d.calories + f.calories, protein: d.protein + f.protein, items: d.items + 1 })
+  }
+  const list = [...days].sort(([a], [b]) => b.localeCompare(a))
+  const since = daysAgoStr(29)
+  const recent = list.filter(([d]) => d >= since).reverse()
+
+  return (
+    <Modal title="Food history" onClose={onClose}>
+      {foods && list.length === 0 && <p className="muted center">No food logged yet.</p>}
+      {recent.length > 0 && (
+        <>
+          <LineChart title="Calories, last 30 days" unit="cal" target={targets.calories} points={recent.map(([date, t]) => ({ date, value: t.calories }))} />
+          <LineChart title="Protein, last 30 days" unit="g" target={targets.protein} points={recent.map(([date, t]) => ({ date, value: t.protein }))} />
+        </>
+      )}
+      <div className="list">
+        {list.slice(0, shown).map(([date, t]) => (
+          <button key={date} className="list-item" onClick={() => onPick(date)}>
+            <div className="grow">
+              <div>{date === todayStr() ? 'Today' : prettyDate(date)}</div>
+              <div className="muted small">
+                {plural(t.items, 'item')} · {Math.round(t.protein)}g protein
+                {t.protein >= targets.protein ? ' ✓' : ''}
+              </div>
+            </div>
+            <strong>{Math.round(t.calories)}</strong>
+          </button>
+        ))}
+      </div>
+      {list.length > shown && (
+        <button className="btn ghost" onClick={() => setShown(shown + 30)}>
+          Show older
+        </button>
+      )}
+      <p className="muted small">Targets shown are today's. Tap a day to see or change what you ate.</p>
     </Modal>
   )
 }

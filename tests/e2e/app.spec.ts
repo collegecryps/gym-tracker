@@ -269,6 +269,72 @@ test('pyramid top set at 8 reps suggests more weight', async ({ page }) => {
   await expect(page.locator('.tip')).toContainText('250 lb for 4+ reps')
 })
 
+test('lift history lists past workouts set by set', async ({ page }) => {
+  await onboard(page)
+  await seedSets(page, 6, 'Squat', 'Quads', [[225, 5]])
+  await seedSets(page, 2, 'Bench Press', 'Chest', [[135, 10, 4], [155, 8], [175, 6]])
+  await seedSets(page, 2, 'Lat Pulldown', 'Back', [[120, 10]])
+  await page.locator('.tabbar').getByText('Lift').click()
+  await page.getByRole('button', { name: '📅 History' }).click()
+  const days = page.locator('.history-day')
+  await expect(days).toHaveCount(2)
+  await expect(days.first()).toContainText('2 exercises · 4 sets')
+  await expect(days.first()).toContainText('135×10  155×8  175×6')
+  // Older days start collapsed; tap to open
+  await expect(days.nth(1).getByText('225×5')).toBeHidden()
+  await days.nth(1).locator('summary').click()
+  await expect(days.nth(1).getByText('225×5')).toBeVisible()
+})
+
+test('progress chart shows estimated max over time', async ({ page }) => {
+  await onboard(page)
+  await seedSets(page, 14, 'Bench Press', 'Chest', [[165, 5]])
+  await seedSets(page, 7, 'Bench Press', 'Chest', [[170, 6]])
+  await seedSets(page, 1, 'Bench Press', 'Chest', [[135, 10], [175, 6]])
+  await seedSets(page, 3, 'Squat', 'Quads', [[225, 5]])
+  await page.locator('.tabbar').getByText('Lift').click()
+  await page.getByRole('button', { name: '📈 Progress' }).click()
+  await expect(page.getByLabel('Exercise')).toHaveValue('Bench Press') // most recent first
+  await expect(page.locator('.chart .pt')).toHaveCount(3)
+  await expect(page.locator('.chart-readout')).toContainText('210 lb')
+  await expect(page.locator('.chart-readout')).toContainText('175 × 6')
+  await expect(page.getByText('+17 lb')).toBeVisible() // 193 → 210
+  // Tap the first point to read it
+  const box = (await page.locator('.chart').boundingBox())!
+  await page.mouse.click(box.x + 4, box.y + box.height / 2)
+  await expect(page.locator('.chart-readout')).toContainText('193 lb')
+  await page.getByLabel('Exercise').selectOption('Squat')
+  await expect(page.locator('.chart .pt')).toHaveCount(1)
+})
+
+test('food history: trends, and tap a day to open it', async ({ page }) => {
+  await onboard(page)
+  await page.evaluate(async () => {
+    const req = indexedDB.open('gym-tracker')
+    const db: IDBDatabase = await new Promise((r) => (req.onsuccess = () => r(req.result)))
+    const tx = db.transaction('foods', 'readwrite')
+    for (const [ago, name, cal, p] of [[3, 'Eggs', 500, 40], [3, 'Steak', 900, 70], [1, 'Pasta', 1200, 45]] as const) {
+      const d = new Date(Date.now() - ago * 864e5)
+      const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      tx.objectStore('foods').add({ date, time: d.getTime(), name, calories: cal, protein: p, carbs: 0, fat: 0, aiEstimated: false })
+    }
+    await new Promise((r) => (tx.oncomplete = r))
+    db.close()
+  })
+  await page.getByRole('button', { name: '📅 History & trends' }).click()
+  await expect(page.locator('.chart-card')).toHaveCount(2)
+  await expect(page.locator('.chart-card').first()).toContainText('1,200 cal')
+  await expect(page.locator('.chart-card').first()).toContainText('target 3,150 cal')
+  const rows = page.locator('.modal .list-item')
+  await expect(rows).toHaveCount(2)
+  await expect(rows.nth(1)).toContainText('1400')
+  await expect(rows.nth(1)).toContainText('2 items · 110g protein')
+  await rows.nth(1).click()
+  await expect(page.getByText('Eggs')).toBeVisible()
+  await expect(page.getByText('Steak')).toBeVisible()
+  await expect(page.locator('.big-number')).toHaveText(/^1750\s*calories left$/)
+})
+
 test('add a custom exercise', async ({ page }) => {
   await onboard(page)
   await page.locator('.tabbar').getByText('Lift').click()

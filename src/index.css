@@ -546,3 +546,74 @@ summary {
 .page > * {
   flex-shrink: 0;
 }
+
+/* Charts */
+.chart-card {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 10px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.chart-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.chart-readout {
+  color: var(--text);
+  text-align: right;
+}
+.chart {
+  touch-action: pan-y;
+}
+.chart .pt {
+  fill: var(--accent);
+  stroke: var(--bg);
+  stroke-width: 2;
+}
+.chart .pt.on {
+  stroke: var(--text);
+}
+.chart .crosshair {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.chart .target-line {
+  stroke: var(--muted);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 4;
+}
+.chart-axis {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.target-swatch {
+  display: inline-block;
+  width: 14px;
+  border-top: 1.5px dashed var(--muted);
+  vertical-align: middle;
+}
+.history-day summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  list-style: none;
+}
+.history-day summary::-webkit-details-marker {
+  display: none;
+}
+.history-ex {
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+.history-day {
+  padding: 12px 14px;
+  border-top: 1px solid var(--line);
+}

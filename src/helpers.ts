@@ -24,3 +24,7 @@ export function shiftDate(date: string, days: number): string {
   const y = d.getFullYear()
   return `${y}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
+
+export function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? '' : 's'}`
+}

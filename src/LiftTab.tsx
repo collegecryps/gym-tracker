@@ -11,12 +11,15 @@ import {
   lastSession,
   nextSessionSuggestion,
   nextSetPrefill,
+  strengthProgress,
   weightStep,
+  workoutsByDay,
   weeklyFrequencyByMuscle,
   weeklySetsByMuscle,
   type ExerciseDef,
 } from './plan'
-import { prettyDate } from './helpers'
+import { plural, prettyDate } from './helpers'
+import { LineChart } from './LineChart'
 import { Photo, Modal, PhotoButton } from './ui'
 
 function useLibrary(): { list: ExerciseDef[]; lookup: (name: string) => ExerciseDef | undefined } {
@@ -36,6 +39,7 @@ export function LiftTab() {
   const [open, setOpen] = useState<ExerciseDef | null>(null)
   const [picking, setPicking] = useState(false)
   const [scan, setScan] = useState<string | null>(null)
+  const [sheet, setSheet] = useState<'history' | 'progress' | null>(null)
 
   const weekSets = useLiveQuery(() => db.sets.where('date').aboveOrEqual(daysAgoStr(7)).toArray(), [])
   const todaySets = (weekSets ?? []).filter((s) => s.date === today)
@@ -55,6 +59,15 @@ export function LiftTab() {
         <PhotoButton className="btn ghost" onPhoto={async (f) => setScan(await shrinkImage(f, 768))}>
           📷 Scan machine
         </PhotoButton>
+      </div>
+
+      <div className="row">
+        <button className="btn ghost" onClick={() => setSheet('history')}>
+          📅 History
+        </button>
+        <button className="btn ghost" onClick={() => setSheet('progress')}>
+          📈 Progress
+        </button>
       </div>
 
       {todayExercises.length > 0 && (
@@ -119,6 +132,8 @@ export function LiftTab() {
         />
       )}
       {open && <ExerciseSheet exercise={open} onClose={() => setOpen(null)} />}
+      {sheet === 'history' && <HistorySheet onClose={() => setSheet(null)} />}
+      {sheet === 'progress' && <ProgressSheet onClose={() => setSheet(null)} />}
     </div>
   )
 }
@@ -389,6 +404,78 @@ function ExerciseSheet({ exercise, onClose }: { exercise: ExerciseDef; onClose: 
             </div>
           ))}
         </div>
+      )}
+    </Modal>
+  )
+}
+
+function HistorySheet({ onClose }: { onClose: () => void }) {
+  const [shown, setShown] = useState(20)
+  const sets = useLiveQuery(() => db.sets.toArray(), [])
+  const workouts = workoutsByDay(sets ?? [])
+
+  return (
+    <Modal title="Workout history" onClose={onClose}>
+      {sets && workouts.length === 0 && <p className="muted center">No workouts logged yet.</p>}
+      {workouts.slice(0, shown).map((w) => (
+        <details key={w.date} className="card history-day" open={w === workouts[0]}>
+          <summary>
+            <span>{w.date === todayStr() ? 'Today' : prettyDate(w.date)}</span>
+            <span className="muted small">
+              {plural(w.exercises.length, 'exercise')} · {plural(w.exercises.reduce((n, e) => n + e.sets.length, 0), 'set')}
+            </span>
+          </summary>
+          {w.exercises.map((e) => (
+            <div key={e.name} className="history-ex">
+              <div>{e.name}</div>
+              <div className="muted small">{e.sets.map((x) => `${x.weightLb}×${x.reps}`).join('  ')}</div>
+            </div>
+          ))}
+        </details>
+      ))}
+      {workouts.length > shown && (
+        <button className="btn ghost" onClick={() => setShown(shown + 20)}>
+          Show older
+        </button>
+      )}
+    </Modal>
+  )
+}
+
+function ProgressSheet({ onClose }: { onClose: () => void }) {
+  const sets = useLiveQuery(() => db.sets.toArray(), [])
+  // Exercises, most recently trained first
+  const names = [...new Map([...(sets ?? [])].sort((a, b) => b.time - a.time).map((s) => [s.exercise, true])).keys()]
+  const [picked, setPicked] = useState<string | null>(null)
+  const name = picked ?? names[0]
+  const points = strengthProgress((sets ?? []).filter((s) => s.exercise === name))
+  const change = points.length > 1 ? points[points.length - 1].value - points[0].value : null
+
+  return (
+    <Modal title="Progress" onClose={onClose}>
+      {sets && names.length === 0 && <p className="muted center">Log some lifts and your progress shows up here.</p>}
+      {names.length > 0 && (
+        <>
+          <select value={name} onChange={(e) => setPicked(e.target.value)} aria-label="Exercise">
+            {names.map((n) => (
+              <option key={n}>{n}</option>
+            ))}
+          </select>
+          <LineChart title="Estimated 1-rep max" points={points} unit="lb" />
+          {change !== null && (
+            <p className="small">
+              <strong className={change >= 0 ? 'up' : 'down'}>
+                {change >= 0 ? '+' : ''}
+                {change} lb
+              </strong>{' '}
+              since {prettyDate(points[0].date)} over {points.length} sessions.
+            </p>
+          )}
+          <p className="muted small">
+            Each point is your best set that day, converted to an estimated 1-rep max so heavy low-rep sets and lighter
+            high-rep sets compare fairly. Tap the chart to read a session.
+          </p>
+        </>
       )}
     </Modal>
   )

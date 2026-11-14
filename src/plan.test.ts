@@ -7,6 +7,8 @@ import {
   isPyramid,
   nextSessionSuggestion,
   nextSetPrefill,
+  strengthProgress,
+  workoutsByDay,
   weeklyFrequencyByMuscle,
   weeklySetsByMuscle,
   weightRate,
@@ -220,5 +222,31 @@ describe('nextSetPrefill', () => {
   })
   it('has nothing to suggest with no history and no sets', () => {
     expect(nextSetPrefill([], [])).toBeNull()
+  })
+})
+
+describe('history and progress', () => {
+  const d1 = daysAgoStr(5)
+  const d2 = daysAgoStr(2)
+  const sets = [
+    set({ date: d1, time: 1, exercise: 'Squat', muscle: 'Quads', weightLb: 225, reps: 5 }),
+    set({ date: d2, time: 3, exercise: 'Bench Press', weightLb: 155, reps: 8 }),
+    set({ date: d2, time: 2, exercise: 'Bench Press', weightLb: 135, reps: 10 }),
+    set({ date: d2, time: 4, exercise: 'Lat Pulldown', muscle: 'Back', weightLb: 120, reps: 10 }),
+    set({ date: d2, time: 5, exercise: 'Bench Press', weightLb: 175, reps: 6 }),
+  ]
+  it('groups workouts by day, newest first, sets in order', () => {
+    const w = workoutsByDay(sets)
+    expect(w.map((x) => x.date)).toEqual([d2, d1])
+    expect(w[0].exercises.map((e) => e.name)).toEqual(['Bench Press', 'Lat Pulldown'])
+    expect(w[0].exercises[0].sets.map((s) => s.weightLb)).toEqual([135, 155, 175])
+  })
+  it('plots the best set per session as estimated 1-rep max', () => {
+    const bench = sets.filter((s) => s.exercise === 'Bench Press')
+    const p = strengthProgress([...bench, set({ date: d1, weightLb: 165, reps: 5 })])
+    expect(p).toEqual([
+      { date: d1, value: 193, note: '165 × 5' },
+      { date: d2, value: 210, note: '175 × 6' },
+    ])
   })
 })
