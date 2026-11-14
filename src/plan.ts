@@ -186,11 +186,18 @@ export const VOLUME_MAX = 20
 // Sets logged without RIR are assumed hard.
 export const HARD_SET_MAX_RIR = 3
 
-// Rep target: growth is similar anywhere from ~5 to 30 reps when sets are taken close to failure
-// (Schoenfeld 2017 loading meta-analysis). 6–12 is the most time-efficient default; the app uses
-// double progression inside it.
+// Rep targets. Growth is similar anywhere from ~5 to 30 reps when sets are taken close to failure
+// (Schoenfeld 2017 loading meta-analysis), and heavy sets of 3–5 built as much muscle as sets of
+// 10 when volume was matched, at the cost of more sets and more joint strain (Schoenfeld 2014).
+// Straight sets: double progression inside 6–12. Pyramids (weight up, reps down each set):
+// the heaviest set progresses inside 4–8; ascending pyramids grow muscle as well as straight
+// sets (Angleri 2017).
 export const REP_MIN = 6
 export const REP_MAX = 12
+export const PYRAMID_TOP_MIN = 4
+export const PYRAMID_TOP_MAX = 8
+// Below this, a set is mostly strength work and adds little size per set.
+export const LOW_REP_NOTE = 4
 
 export function isHardSet(s: LiftSet): boolean {
   return s.rir === undefined || s.rir <= HARD_SET_MAX_RIR
@@ -233,26 +240,65 @@ export function weeklyFrequencyByMuscle(sets: LiftSet[]): Map<string, number> {
 export interface Suggestion {
   lastDate: string
   lastSets: LiftSet[]
+  pyramid: boolean
   text: string
 }
 
-/** Double progression: add reps until the top of the range, then add weight and restart at the bottom. */
-export function nextSessionSuggestion(exerciseSets: LiftSet[], today: string): Suggestion | null {
+export function weightStep(weightLb: number): number {
+  return weightLb >= 100 ? 5 : 2.5
+}
+
+/** A session is a pyramid if the weight goes up across at least two sets. */
+export function isPyramid(sets: LiftSet[]): boolean {
+  const weights = sets.map((s) => s.weightLb)
+  return new Set(weights).size >= 2 && weights.every((w, i) => i === 0 || w >= weights[i - 1])
+}
+
+/** Sets from the most recent session before today, in the order they were done. */
+export function lastSession(exerciseSets: LiftSet[], today: string): { date: string; sets: LiftSet[] } | null {
   const previous = exerciseSets.filter((s) => s.date < today)
   if (!previous.length) return null
-  const lastDate = previous.reduce((m, s) => (s.date > m ? s.date : m), '')
-  const lastSets = previous.filter((s) => s.date === lastDate).sort((a, b) => a.time - b.time)
-  const top = lastSets.reduce((best, s) => (e1rm(s.weightLb, s.reps) > e1rm(best.weightLb, best.reps) ? s : best))
-  const step = top.weightLb >= 100 ? 5 : 2.5
-  const easy = top.rir !== undefined && top.rir > HARD_SET_MAX_RIR
+  const date = previous.reduce((m, s) => (s.date > m ? s.date : m), '')
+  return { date, sets: previous.filter((s) => s.date === date).sort((a, b) => a.time - b.time) }
+}
+
+/** Double progression on the top set. For pyramids the top set is the heaviest one. */
+export function nextSessionSuggestion(exerciseSets: LiftSet[], today: string): Suggestion | null {
+  const last = lastSession(exerciseSets, today)
+  if (!last) return null
+  const pyramid = isPyramid(last.sets)
+  const top = pyramid
+    ? last.sets.reduce((best, s) => (s.weightLb >= best.weightLb ? s : best))
+    : last.sets.reduce((best, s) => (e1rm(s.weightLb, s.reps) > e1rm(best.weightLb, best.reps) ? s : best))
+  const [lo, hi] = pyramid ? [PYRAMID_TOP_MIN, PYRAMID_TOP_MAX] : [REP_MIN, REP_MAX]
+  const step = weightStep(top.weightLb)
+  const label = pyramid ? 'Last top set' : 'Last time'
   let text: string
-  if (top.reps >= REP_MAX) {
-    text = `Last time: ${top.weightLb} × ${top.reps}. You hit the top of the ${REP_MIN}–${REP_MAX} range, so add weight: ${top.weightLb + step} lb for ${REP_MIN}+ reps.`
-  } else if (top.reps < REP_MIN) {
-    text = `Last time: ${top.weightLb} × ${top.reps}. That's below ${REP_MIN} reps; drop to about ${Math.max(0, top.weightLb - step)} lb and work up within ${REP_MIN}–${REP_MAX}.`
+  if (top.reps >= hi) {
+    text = `${label}: ${top.weightLb} × ${top.reps}. That's the top of ${lo}–${hi}, so go up: ${top.weightLb + step} lb for ${lo}+ reps.`
   } else {
-    text = `Last time: ${top.weightLb} × ${top.reps}. Beat it: ${top.weightLb} × ${top.reps + 1}+.`
+    text = `${label}: ${top.weightLb} × ${top.reps}. Beat it: ${top.weightLb} × ${top.reps + 1}+.`
   }
-  if (easy) text += ` Last session's top set had ${top.rir} reps left; take sets to 0–3 reps from failure.`
-  return { lastDate, lastSets, text }
+  if (top.reps < LOW_REP_NOTE) {
+    text += ` Under ${LOW_REP_NOTE} reps mostly builds strength; for size, keep the top set at ${LOW_REP_NOTE}+.`
+  }
+  if (top.rir !== undefined && top.rir > HARD_SET_MAX_RIR) {
+    text += ` That set had ${top.rir}+ reps left; take working sets to 0–3 reps from failure.`
+  }
+  return { lastDate: last.date, lastSets: last.sets, pyramid, text }
+}
+
+/**
+ * What to fill in for the next set. Matches the same set number from last session if there is
+ * one; otherwise steps up from the set just done (heavier, fewer reps), or repeats it for straight sets.
+ */
+export function nextSetPrefill(lastSets: LiftSet[], todaySets: LiftSet[]): { weightLb: number; reps: number } | null {
+  const n = todaySets.length
+  if (lastSets[n]) return { weightLb: lastSets[n].weightLb, reps: lastSets[n].reps }
+  const prev = todaySets[n - 1]
+  if (!prev) return lastSets.length ? { weightLb: lastSets[0].weightLb, reps: lastSets[0].reps } : null
+  const climbing = isPyramid(todaySets) || isPyramid(lastSets)
+  return climbing
+    ? { weightLb: prev.weightLb + weightStep(prev.weightLb) * 2, reps: Math.max(1, prev.reps - 2) }
+    : { weightLb: prev.weightLb, reps: prev.reps }
 }

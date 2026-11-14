@@ -38,13 +38,28 @@ export const PRINCIPLES: Principle[] = [
     ],
   },
   {
-    rule: 'Any rep range from about 5 to 30 works; 6–12 is the default',
+    rule: 'Any rep range from about 5 to 30 builds muscle',
     detail:
-      'Heavy and light loads build similar muscle when sets are taken near failure. The app uses 6–12 because it is time-efficient and easy to progress. Add reps until you hit 12, then add weight and drop back toward 6 (double progression).',
+      'Heavy and light loads build similar muscle when sets are taken near failure. Straight sets progress inside 6–12 reps: add reps until you hit 12, then add weight. Heavy sets of 3–5 built as much muscle as sets of 10 when total volume matched, but needed more sets and caused more joint aches, so the app reminds you when a top set falls under 4 reps.',
     sources: [
       {
         cite: 'Schoenfeld et al. (2017), J Strength Cond Res: low vs. high load training, meta-analysis',
         url: 'https://pubmed.ncbi.nlm.nih.gov/?term=Strength%20and%20Hypertrophy%20Adaptations%20Between%20Low-%20vs.%20High-Load%20Resistance%20Training%20Schoenfeld',
+      },
+      {
+        cite: 'Schoenfeld et al. (2014), J Strength Cond Res: 7×3 vs. 3×10 in trained men',
+        url: 'https://pubmed.ncbi.nlm.nih.gov/?term=Effects%20of%20different%20volume-equated%20resistance%20training%20loading%20strategies%20on%20muscular%20adaptations%20in%20well-trained%20men',
+      },
+    ],
+  },
+  {
+    rule: 'Pyramids (weight up, reps down) work as well as straight sets',
+    detail:
+      'In trained men, an ascending pyramid built the same muscle as straight sets with matched volume. The app treats your heaviest set as the top set: hit 8 reps on it and the next session suggests more weight; under 8, beat it by a rep. Lighter ramp-up sets logged as 4+ reps left count as warm-ups, not hard sets.',
+    sources: [
+      {
+        cite: 'Angleri, Ugrinowitsch & Libardi (2017), Eur J Appl Physiol: crescent pyramid and drop-set vs. traditional training',
+        url: 'https://pubmed.ncbi.nlm.nih.gov/?term=Crescent%20pyramid%20and%20drop-set%20systems%20do%20not%20promote%20greater%20strength%20gains%2C%20muscle%20hypertrophy%20Angleri',
       },
     ],
   },

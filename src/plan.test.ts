@@ -4,7 +4,9 @@ import {
   DEFAULT_EXERCISES,
   computeTargets,
   e1rm,
+  isPyramid,
   nextSessionSuggestion,
+  nextSetPrefill,
   weeklyFrequencyByMuscle,
   weeklySetsByMuscle,
   weightRate,
@@ -145,11 +147,27 @@ describe('progression', () => {
   it('uses 2.5 lb jumps on light weights', () => {
     expect(nextSessionSuggestion(last({ weightLb: 25, reps: 12 }), today)?.text).toMatch(/27\.5 lb/)
   })
-  it('drops weight when under the rep range', () => {
-    expect(nextSessionSuggestion(last({ reps: 4 }), today)?.text).toMatch(/drop to about 180/)
+  it('flags very low reps without telling you to drop weight', () => {
+    const t = nextSessionSuggestion(last({ reps: 3 }), today)!.text
+    expect(t).toMatch(/185 × 4\+/)
+    expect(t).toMatch(/Under 4 reps mostly builds strength/)
   })
   it('nudges toward failure when sets were too easy', () => {
     expect(nextSessionSuggestion(last({ rir: 4 }), today)?.text).toMatch(/0–3 reps from failure/)
+  })
+  it('treats an ascending pyramid by its heaviest set, using a 4–8 range', () => {
+    const d = daysAgoStr(2)
+    const ladder = [
+      set({ date: d, time: 1, weightLb: 135, reps: 10, rir: 4 }),
+      set({ date: d, time: 2, weightLb: 155, reps: 8 }),
+      set({ date: d, time: 3, weightLb: 175, reps: 6 }),
+      set({ date: d, time: 4, weightLb: 185, reps: 5 }),
+    ]
+    const s = nextSessionSuggestion(ladder, today)!
+    expect(s.pyramid).toBe(true)
+    expect(s.text).toMatch(/Last top set: 185 × 5\. Beat it: 185 × 6\+/)
+    const top8 = [...ladder.slice(0, 3), set({ date: d, time: 4, weightLb: 185, reps: 8 })]
+    expect(nextSessionSuggestion(top8, today)!.text).toMatch(/190 lb for 4\+ reps/)
   })
   it('ignores today and picks the best set of the latest session', () => {
     const sets = [
@@ -171,5 +189,36 @@ describe('e1rm', () => {
   it('uses Epley', () => {
     expect(e1rm(185, 8)).toBeCloseTo(234.33, 1)
     expect(e1rm(300, 1)).toBe(300)
+  })
+})
+
+describe('isPyramid', () => {
+  it('needs weight to climb across sets', () => {
+    expect(isPyramid([set({ weightLb: 135 }), set({ weightLb: 155 }), set({ weightLb: 175 })])).toBe(true)
+    expect(isPyramid([set({}), set({}), set({})])).toBe(false)
+    expect(isPyramid([set({ weightLb: 185 }), set({ weightLb: 165 })])).toBe(false)
+  })
+})
+
+describe('nextSetPrefill', () => {
+  const ladder = [set({ weightLb: 135, reps: 10 }), set({ weightLb: 155, reps: 8 }), set({ weightLb: 175, reps: 6 })]
+  it('matches the same set number from last session', () => {
+    expect(nextSetPrefill(ladder, [])).toEqual({ weightLb: 135, reps: 10 })
+    expect(nextSetPrefill(ladder, ladder.slice(0, 2))).toEqual({ weightLb: 175, reps: 6 })
+  })
+  it('climbs past last session: +10 lb, −2 reps', () => {
+    expect(nextSetPrefill(ladder, ladder)).toEqual({ weightLb: 185, reps: 4 })
+  })
+  it('climbs when today is a pyramid even with no history', () => {
+    expect(nextSetPrefill([], ladder.slice(0, 2))).toEqual({ weightLb: 165, reps: 6 })
+  })
+  it('repeats the set for straight sets', () => {
+    expect(nextSetPrefill([], [set({})])).toEqual({ weightLb: 185, reps: 8 })
+  })
+  it('uses 2.5 lb jumps under 100 lb', () => {
+    expect(nextSetPrefill([], [set({ weightLb: 30, reps: 12 }), set({ weightLb: 35, reps: 10 })])).toEqual({ weightLb: 40, reps: 8 })
+  })
+  it('has nothing to suggest with no history and no sets', () => {
+    expect(nextSetPrefill([], [])).toBeNull()
   })
 })

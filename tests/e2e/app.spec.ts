@@ -167,15 +167,15 @@ test('log sets and see weekly volume', async ({ page }) => {
   await page.getByRole('button', { name: '+ Add exercise' }).click()
   await page.locator('.modal input').fill('bench')
   await page.locator('.modal .list-item', { hasText: /^Bench Press/ }).click()
-  await page.getByLabel('Weight lb').fill('185')
-  await page.getByLabel('Reps').fill('8')
+  await page.getByLabel('Weight lb', { exact: true }).fill('185')
+  await page.getByLabel('Reps', { exact: true }).fill('8')
   for (let i = 0; i < 3; i++) await page.getByRole('button', { name: 'Log set' }).click()
   // A too-easy set (4+ reps left) doesn't count as hard
   await page.getByRole('button', { name: '4+' }).click()
   await page.getByRole('button', { name: 'Log set' }).click()
-  await expect(page.getByText('Set 4')).toBeVisible()
-  await page.getByRole('button', { name: 'Delete set' }).first().click()
-  await expect(page.getByText('Set 4')).toHaveCount(0)
+  await expect(page.locator('.ladder-row')).toHaveCount(4)
+  await page.getByRole('button', { name: 'Delete set 1' }).click()
+  await expect(page.locator('.ladder-row')).toHaveCount(3)
   await page.getByRole('button', { name: 'Close' }).click()
 
   const row = (m: string) => page.locator('.vol-row', { hasText: m })
@@ -183,6 +183,90 @@ test('log sets and see weekly volume', async ({ page }) => {
   await expect(row('Triceps').locator('.vol-num')).toHaveText('1')
   await expect(row('Chest').locator('.vol-freq')).toHaveText('1d')
   await expect(page.locator('.list-item', { hasText: 'Bench Press' })).toContainText('3 sets')
+})
+
+async function seedSets(page: Page, daysAgo: number, exercise: string, muscle: string, ladder: [number, number, number?][]) {
+  await page.evaluate(
+    async ({ daysAgo, exercise, muscle, ladder }) => {
+      const req = indexedDB.open('gym-tracker')
+      const db: IDBDatabase = await new Promise((r) => (req.onsuccess = () => r(req.result)))
+      const d = new Date(Date.now() - daysAgo * 864e5)
+      const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      const tx = db.transaction('sets', 'readwrite')
+      ladder.forEach(([weightLb, reps, rir], i) =>
+        tx.objectStore('sets').add({ date, time: d.getTime() + i, exercise, muscle, weightLb, reps, rir: rir ?? 1 }),
+      )
+      await new Promise((r) => (tx.oncomplete = r))
+      db.close()
+    },
+    { daysAgo, exercise, muscle, ladder },
+  )
+}
+
+async function openExercise(page: Page, search: string, name: RegExp) {
+  await page.locator('.tabbar').getByText('Lift').click()
+  await page.getByRole('button', { name: '+ Add exercise' }).click()
+  await page.locator('.modal input').fill(search)
+  await page.locator('.modal .list-item', { hasText: name }).click()
+}
+
+test('pyramid: last session ladder, prefilled sets, edit a set', async ({ page }) => {
+  await onboard(page)
+  await seedSets(page, 3, 'Bench Press', 'Chest', [[135, 10, 4], [155, 8], [175, 6], [185, 5]])
+  await openExercise(page, 'bench', /^Bench Press/)
+
+  await expect(page.locator('.tip')).toContainText('Last top set: 185 × 5. Beat it: 185 × 6+')
+  await expect(page.locator('.ladder-row')).toHaveCount(4)
+  await expect(page.locator('.ladder-row').nth(2)).toContainText('175 × 6')
+
+  const weight = page.getByLabel('Weight lb', { exact: true })
+  const reps = page.getByLabel('Reps', { exact: true })
+
+  // Set 1 prefilled from last time's set 1
+  await expect(weight).toHaveValue('135')
+  await expect(reps).toHaveValue('10')
+  await page.getByRole('button', { name: '4+' }).click()
+  await page.getByRole('button', { name: 'Log set' }).click()
+
+  // Set 2 prefilled from last time's set 2; beat it by a rep with the + button
+  await expect(weight).toHaveValue('155')
+  await expect(reps).toHaveValue('8')
+  await page.getByRole('button', { name: 'Reps up' }).click()
+  await page.getByRole('button', { name: '1', exact: true }).click()
+  await page.getByRole('button', { name: 'Log set' }).click()
+  await expect(page.locator('.ladder-row').nth(1)).toContainText('155 × 9')
+  await expect(page.locator('.ladder-row').nth(1).locator('.up')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Log set' }).click() // 175 × 6
+  await page.getByRole('button', { name: 'Weight lb up' }).click() // 185 → 190
+  await expect(weight).toHaveValue('190')
+  await page.getByRole('button', { name: 'Log set' }).click() // 190 × 5
+
+  // Going past last session's ladder: +10 lb, −2 reps
+  await expect(page.locator('.stepper-row input').first()).toHaveValue('200')
+  await expect(reps).toHaveValue('3')
+
+  // Fix a typo on set 3
+  await page.getByRole('button', { name: 'Edit set 3' }).click()
+  await expect(page.getByRole('heading', { name: 'Edit set 3' })).toBeVisible()
+  await expect(weight).toHaveValue('175')
+  await reps.fill('7')
+  await page.getByRole('button', { name: 'Update set' }).click()
+  await expect(page.locator('.ladder-row').nth(2)).toContainText('175 × 7')
+  await expect(page.getByRole('heading', { name: 'Set 5' })).toBeVisible()
+  await expect(page.locator('.ladder-row')).toHaveCount(4)
+
+  // Warm-ups (4+ left) don't count: 3 hard sets today + 3 from the seeded session
+  await page.getByRole('button', { name: 'Close' }).click()
+  await expect(page.locator('.vol-row', { hasText: 'Chest' }).locator('.vol-num')).toHaveText('6')
+})
+
+test('pyramid top set at 8 reps suggests more weight', async ({ page }) => {
+  await onboard(page)
+  await seedSets(page, 2, 'Squat', 'Quads', [[185, 10, 4], [225, 8], [245, 8]])
+  await openExercise(page, 'squat', /^Squat/)
+  await expect(page.locator('.tip')).toContainText('245 × 8')
+  await expect(page.locator('.tip')).toContainText('250 lb for 4+ reps')
 })
 
 test('add a custom exercise', async ({ page }) => {
@@ -193,8 +277,8 @@ test('add a custom exercise', async ({ page }) => {
   await page.locator('.modal select').selectOption('Quads')
   await page.getByRole('button', { name: 'Add', exact: true }).click()
   await expect(page.locator('.modal h2')).toHaveText('Pendulum Squat')
-  await page.getByLabel('Weight lb').fill('90')
-  await page.getByLabel('Reps').fill('10')
+  await page.getByLabel('Weight lb', { exact: true }).fill('90')
+  await page.getByLabel('Reps', { exact: true }).fill('10')
   await page.getByRole('button', { name: 'Log set' }).click()
   await page.getByRole('button', { name: 'Close' }).click()
   await expect(page.locator('.vol-row', { hasText: 'Quads' }).locator('.vol-num')).toHaveText('1')
@@ -219,8 +303,8 @@ test('scan a machine and log the suggested exercise', async ({ page }) => {
   // An exercise not in the built-in list gets saved as a custom one
   await page.getByText('Straight-Arm Pulldown').click()
   await expect(page.locator('.modal h2')).toHaveText('Straight-Arm Pulldown')
-  await page.getByLabel('Weight lb').fill('50')
-  await page.getByLabel('Reps').fill('12')
+  await page.getByLabel('Weight lb', { exact: true }).fill('50')
+  await page.getByLabel('Reps', { exact: true }).fill('12')
   await page.getByRole('button', { name: 'Log set' }).click()
   await page.getByRole('button', { name: 'Close' }).click()
   await page.getByRole('button', { name: '+ Add exercise' }).click()
@@ -246,7 +330,7 @@ test('progression advice uses last session', async ({ page }) => {
   await page.locator('.modal input').fill('squat')
   await page.locator('.modal .list-item', { hasText: /^Squat/ }).click()
   await expect(page.locator('.tip')).toContainText('230 lb')
-  await expect(page.getByLabel('Weight lb')).toHaveValue('225') // prefilled from last time
+  await expect(page.getByLabel('Weight lb', { exact: true })).toHaveValue('225') // prefilled from last time
 })
 
 test('weigh in and update today', async ({ page }) => {
@@ -310,7 +394,7 @@ test('restore rejects a file that is not a backup', async ({ page }) => {
 test('science sources are listed with links', async ({ page }) => {
   await onboard(page)
   await page.locator('.tabbar').getByText('More').click()
-  await expect(page.locator('details')).toHaveCount(7)
+  await expect(page.locator('details')).toHaveCount(8)
   await page.getByText('10–20 hard sets per muscle per week').click()
   await expect(page.getByRole('link', { name: /Schoenfeld, Ogborn & Krieger \(2017\)/ })).toBeVisible()
 })

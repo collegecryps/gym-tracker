@@ -473,3 +473,76 @@ summary {
 .card p {
   margin: 0;
 }
+
+/* Lift ladder: last session vs today, set by set */
+.ladder {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.ladder-head,
+.ladder-row {
+  display: grid;
+  grid-template-columns: 36px 1fr 1.4fr 36px;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+}
+.ladder-row {
+  border-top: 1px solid var(--line);
+  font-size: 15px;
+}
+.ladder-row.editing {
+  background: rgba(74, 222, 128, 0.08);
+}
+.ladder-today {
+  text-align: left;
+  font-weight: 600;
+  padding: 4px 0;
+}
+.up {
+  color: var(--accent);
+}
+.down {
+  color: var(--warn);
+}
+.stepper {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.stepper-row {
+  display: flex;
+  gap: 4px;
+}
+.stepper-row input {
+  text-align: center;
+  font-size: 20px;
+  font-weight: 600;
+  padding: 8px 4px;
+  min-width: 0;
+}
+.stepper-row button {
+  flex: none;
+  width: 40px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  font-size: 20px;
+}
+.rir {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Stop long modal content from squashing (flex items shrink by default) */
+.modal > *,
+.page > * {
+  flex-shrink: 0;
+}

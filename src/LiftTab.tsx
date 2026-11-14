@@ -5,12 +5,13 @@ import { daysAgoStr, db, todayStr, type LiftSet } from './db'
 import {
   DEFAULT_EXERCISES,
   MUSCLES,
-  REP_MAX,
-  REP_MIN,
   VOLUME_MAX,
   VOLUME_MIN,
   e1rm,
+  lastSession,
   nextSessionSuggestion,
+  nextSetPrefill,
+  weightStep,
   weeklyFrequencyByMuscle,
   weeklySetsByMuscle,
   type ExerciseDef,
@@ -219,59 +220,139 @@ function ScanSheet({ photo, onPick, onClose }: { photo: string; onPick: (e: Exer
 
 const RIR_OPTIONS = [0, 1, 2, 3, 4]
 
+function addSet(s: Omit<LiftSet, 'id' | 'time'>) {
+  return db.sets.add({ ...s, time: Date.now() })
+}
+
+const fmt = (s: { weightLb: number; reps: number }) => `${s.weightLb} × ${s.reps}`
+
+function Stepper({ label, value, onChange, step, decimal }: { label: string; value: string; onChange: (v: string) => void; step: number; decimal?: boolean }) {
+  const bump = (d: number) => onChange(String(Math.max(0, Math.round(((+value || 0) + d) * 10) / 10)))
+  return (
+    <div className="stepper">
+      <span>{label}</span>
+      <div className="stepper-row">
+        <button onClick={() => bump(-step)} aria-label={`${label} down`}>
+          −
+        </button>
+        <input aria-label={label} inputMode={decimal ? 'decimal' : 'numeric'} value={value} onChange={(e) => onChange(e.target.value)} />
+        <button onClick={() => bump(step)} aria-label={`${label} up`}>
+          +
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function ExerciseSheet({ exercise, onClose }: { exercise: ExerciseDef; onClose: () => void }) {
   const today = todayStr()
   const history = useLiveQuery(() => db.sets.where('exercise').equals(exercise.name).sortBy('time'), [exercise.name])
   const todaySets = (history ?? []).filter((s) => s.date === today)
-  const lastSet = history?.[history.length - 1]
-  const [weight, setWeight] = useState('')
-  const [reps, setReps] = useState('')
-  const [rir, setRir] = useState<number | undefined>(2)
-
+  const last = history ? lastSession(history, today) : null
+  const lastSets = last?.sets ?? []
   const suggestion = history ? nextSessionSuggestion(history, today) : null
   const best = (history ?? []).reduce<LiftSet | null>((b, s) => (!b || e1rm(s.weightLb, s.reps) > e1rm(b.weightLb, b.reps) ? s : b), null)
+
+  // Inputs: null = use the suggested prefill for the next set.
+  const [weight, setWeight] = useState<string | null>(null)
+  const [reps, setReps] = useState<string | null>(null)
+  const [rir, setRir] = useState<number | undefined>(2)
+  const [editing, setEditing] = useState<LiftSet | null>(null)
+
+  const prefill = nextSetPrefill(lastSets, todaySets)
+  const w = weight ?? (prefill ? String(prefill.weightLb) : '')
+  const r = reps ?? (prefill ? String(prefill.reps) : '')
+  const wStep = weightStep(+w || 0)
 
   const byDate = new Map<string, LiftSet[]>()
   for (const s of history ?? []) if (s.date !== today) byDate.set(s.date, [...(byDate.get(s.date) ?? []), s])
   const sessions = [...byDate].reverse().slice(0, 6)
 
-  const w = weight || (lastSet ? String(lastSet.weightLb) : '')
-  const r = reps || (lastSet ? String(lastSet.reps) : '')
+  const rows = Math.max(lastSets.length, todaySets.length)
 
-  async function log() {
+  function resetInputs() {
+    setWeight(null)
+    setReps(null)
+    setEditing(null)
+  }
+
+  async function save() {
     if (!(+w >= 0) || !(+r > 0)) return
-    await db.sets.add({
-      date: today,
-      time: Date.now(),
-      exercise: exercise.name,
-      muscle: exercise.muscle,
-      weightLb: +w,
-      reps: Math.round(+r),
-      rir,
-    })
-    setWeight(w)
-    setReps(r)
+    if (editing?.id !== undefined) {
+      await db.sets.update(editing.id, { weightLb: +w, reps: Math.round(+r), rir })
+    } else {
+      await addSet({ date: today, exercise: exercise.name, muscle: exercise.muscle, weightLb: +w, reps: Math.round(+r), rir })
+    }
+    resetInputs()
+  }
+
+  function edit(s: LiftSet) {
+    setEditing(s)
+    setWeight(String(s.weightLb))
+    setReps(String(s.reps))
+    setRir(s.rir)
+  }
+
+  async function remove(s: LiftSet) {
+    if (s.id !== undefined) await db.sets.delete(s.id)
+    if (editing?.id === s.id) resetInputs()
   }
 
   return (
     <Modal title={exercise.name} onClose={onClose}>
       <p className="muted small">
         {exercise.muscle}
-        {exercise.secondary?.length ? ` · also ${exercise.secondary.join(', ')}` : ''} · aim for {REP_MIN}–{REP_MAX} reps
+        {exercise.secondary?.length ? ` · also ${exercise.secondary.join(', ')}` : ''}
       </p>
       {suggestion && <div className="card tip">{suggestion.text}</div>}
 
-      <div className="grid3">
-        <label>
-          Weight lb
-          <input inputMode="decimal" value={w} onChange={(e) => setWeight(e.target.value)} />
-        </label>
-        <label>
-          Reps
-          <input inputMode="numeric" value={r} onChange={(e) => setReps(e.target.value)} />
-        </label>
+      {rows > 0 && (
+        <div className="ladder">
+          <div className="ladder-head muted small">
+            <span>Set</span>
+            <span>{last ? prettyDate(last.date) : 'Last time'}</span>
+            <span>Today</span>
+            <span />
+          </div>
+          {Array.from({ length: rows }, (_, i) => {
+            const prev = lastSets[i]
+            const cur = todaySets[i]
+            const beat = prev && cur ? Math.sign(e1rm(cur.weightLb, cur.reps) - e1rm(prev.weightLb, prev.reps)) : 0
+            return (
+              <div key={i} className={`ladder-row ${cur && editing?.id === cur.id ? 'editing' : ''}`}>
+                <span className="muted">{i + 1}</span>
+                <span className="muted">{prev ? fmt(prev) : '–'}</span>
+                {cur ? (
+                  <button className="ladder-today" onClick={() => edit(cur)} aria-label={`Edit set ${i + 1}`}>
+                    {fmt(cur)}
+                    {beat > 0 && <span className="up"> ▲</span>}
+                    {beat < 0 && <span className="down"> ▼</span>}
+                    {cur.rir !== undefined && <span className="muted small"> · {cur.rir === 4 ? '4+' : cur.rir} left</span>}
+                  </button>
+                ) : (
+                  <span className="muted">–</span>
+                )}
+                {cur ? (
+                  <button className="icon-btn" onClick={() => remove(cur)} aria-label={`Delete set ${i + 1}`}>
+                    ✕
+                  </button>
+                ) : (
+                  <span />
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      <div className="card">
+        <h3>{editing ? `Edit set ${todaySets.findIndex((s) => s.id === editing.id) + 1}` : `Set ${todaySets.length + 1}`}</h3>
+        <div className="row">
+          <Stepper label="Weight lb" value={w} onChange={setWeight} step={wStep} decimal />
+          <Stepper label="Reps" value={r} onChange={setReps} step={1} />
+        </div>
         <div className="rir">
-          <span>Reps left</span>
+          <span>Reps left in the tank</span>
           <div className="seg">
             {RIR_OPTIONS.map((n) => (
               <button key={n} className={rir === n ? 'on' : ''} onClick={() => setRir(n)}>
@@ -279,32 +360,23 @@ function ExerciseSheet({ exercise, onClose }: { exercise: ExerciseDef; onClose: 
               </button>
             ))}
           </div>
+          <span className="muted small">Warm-ups: pick 4+. They won't count toward weekly hard sets.</span>
+        </div>
+        <div className="row">
+          {editing && (
+            <button className="btn ghost" onClick={resetInputs}>
+              Cancel
+            </button>
+          )}
+          <button className="btn" onClick={save}>
+            {editing ? 'Update set' : 'Log set'}
+          </button>
         </div>
       </div>
-      <button className="btn" onClick={log}>
-        Log set
-      </button>
-
-      {todaySets.length > 0 && (
-        <div className="list">
-          {todaySets.map((s, i) => (
-            <div key={s.id} className="list-item">
-              <span className="muted">Set {i + 1}</span>
-              <div className="grow">
-                {s.weightLb} lb × {s.reps}
-                {s.rir !== undefined ? ` · ${s.rir === 4 ? '4+' : s.rir} left` : ''}
-              </div>
-              <button className="icon-btn" onClick={() => s.id !== undefined && db.sets.delete(s.id)} aria-label="Delete set">
-                ✕
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
 
       {best && (
         <p className="muted small">
-          Best: {best.weightLb} × {best.reps} (est. 1-rep max {Math.round(e1rm(best.weightLb, best.reps))} lb)
+          Best: {fmt(best)} (est. 1-rep max {Math.round(e1rm(best.weightLb, best.reps))} lb)
         </p>
       )}
       {sessions.length > 0 && (
@@ -313,7 +385,7 @@ function ExerciseSheet({ exercise, onClose }: { exercise: ExerciseDef; onClose: 
           {sessions.map(([date, sets]) => (
             <div key={date} className="list-item">
               <span className="muted small">{prettyDate(date)}</span>
-              <div className="grow small">{sets.map((s) => `${s.weightLb}×${s.reps}`).join('  ')}</div>
+              <div className="grow small">{sets.map((x) => `${x.weightLb}×${x.reps}`).join('  ')}</div>
             </div>
           ))}
         </div>
