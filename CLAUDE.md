@@ -12,8 +12,8 @@ Installed on iPhone as a home-screen web app (PWA), not an App Store app (decide
   the `gh-pages` branch). Live at https://collegecryps.github.io/gym-tracker/. No GitHub Actions:
   the gh token lacks `workflow` scope, so deploys are manual from this Mac.
 
-- Standing OK from the owner (2026-11-14): commit and deploy (`npm run deploy`) every finished
-  change without asking first, so both phones get it.
+- **Always ask the owner before deploying** (`npm run deploy`) or pushing. They often batch several
+  changes before going live. (Corrected 2026-11-14 after a deploy without asking.)
 
 ## Stack
 

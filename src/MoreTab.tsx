@@ -162,6 +162,9 @@ export function MoreTab({ profile }: { profile: Profile }) {
           </details>
         ))}
       </div>
+      <p className="muted small center">
+        App version {new Date(__BUILD_DATE__).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+      </p>
     </div>
   )
 }

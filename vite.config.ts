@@ -5,6 +5,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 // BASE is set when deploying under a sub-path (e.g. GitHub Pages: /gym-tracker/).
 export default defineConfig({
   base: process.env.BASE ?? '/',
+  define: { __BUILD_DATE__: JSON.stringify(new Date().toISOString()) },
   plugins: [
     react(),
     VitePWA({
