@@ -9,6 +9,7 @@ import {
   HARD_SET_MAX_RIR,
   VOLUME_MIN,
   e1rm,
+  dayLift,
   liftSession,
   type LiftEstimate,
   lastSession,
@@ -40,8 +41,9 @@ function useLibrary(): { list: ExerciseDef[]; lookup: (name: string) => Exercise
 export function LiftTab({ profile }: { profile: Profile }) {
   const today = todayStr()
   const targets = useTargets(profile)
-  const session = useLiveQuery(() => db.sessions.where('date').equals(today).last(), [today])
-  const now = useNow(session && !session.end ? 1000 : 30000)
+  const sessions = useLiveQuery(() => db.sessions.where('date').equals(today).toArray(), [today])
+  const running = sessions?.find((x) => !x.end)
+  const now = useNow(running ? 1000 : 30000)
   const lib = useLibrary()
   const [open, setOpen] = useState<ExerciseDef | null>(null)
   const [picking, setPicking] = useState(false)
@@ -52,8 +54,11 @@ export function LiftTab({ profile }: { profile: Profile }) {
   const todaySets = (weekSets ?? []).filter((s) => s.date === today)
   const todayExercises = [...new Set(todaySets.map((s) => s.exercise))]
 
-  const estimate = targets ? liftSession(todaySets, targets.currentWeight, session, now) : null
+  const weight = targets?.currentWeight
+  const estimate = weight ? dayLift(todaySets, weight, sessions ?? [], now) : null
   const exerciseCal = new Map(estimate?.byExercise.map((e) => [e.name, e.calories]))
+  const runningSets = running ? todaySets.filter((x) => x.time >= running.start) : []
+  const runningEstimate = running && weight ? liftSession(runningSets, weight, running, now) : null
 
   const volume = weeklySetsByMuscle(weekSets ?? [], lib.lookup)
   const freq = weeklyFrequencyByMuscle(weekSets ?? [])
@@ -62,12 +67,7 @@ export function LiftTab({ profile }: { profile: Profile }) {
     <div className="page">
       <h1>Lift</h1>
 
-      <SessionCard
-        session={session}
-        estimate={estimate}
-        now={now}
-        firstSet={todaySets.length ? Math.min(...todaySets.map((x) => x.time)) : null}
-      />
+      <SessionCard running={running} runningEstimate={runningEstimate} runningSets={runningSets.length} today={estimate} now={now} />
 
       <TodayPlan lib={lib} onOpen={setOpen} />
 
@@ -168,7 +168,7 @@ export function LiftTab({ profile }: { profile: Profile }) {
         />
       )}
       {open && <ExerciseSheet exercise={open} onClose={() => setOpen(null)} />}
-      {sheet === 'history' && <HistorySheet onClose={() => setSheet(null)} />}
+      {sheet === 'history' && <HistorySheet weightLb={weight} onClose={() => setSheet(null)} />}
       {sheet === 'progress' && <ProgressSheet onClose={() => setSheet(null)} />}
     </div>
   )
@@ -233,57 +233,52 @@ function clock(ms: number): string {
 }
 
 function SessionCard({
-  session,
-  estimate,
+  running,
+  runningEstimate,
+  runningSets,
+  today,
   now,
-  firstSet,
 }: {
-  session: LiftSession | undefined
-  estimate: LiftEstimate | null
+  running: LiftSession | undefined
+  runningEstimate: LiftEstimate | null
+  runningSets: number
+  today: LiftEstimate | null
   now: number
-  firstSet: number | null
 }) {
-  // Sets logged before the timer existed: treat the lift as started at the first set.
-  const startTime = session?.start ?? (firstSet !== null ? firstSet - 2 * 60000 : null)
-  const active = startTime !== null && !session?.end
   const start = () => db.sessions.add({ date: todayStr(), start: Date.now() })
-  const end = () =>
-    session?.id !== undefined
-      ? db.sessions.update(session.id, { end: Date.now() })
-      : startTime !== null && db.sessions.add({ date: todayStr(), start: startTime, end: Date.now() })
-  const resume = () => session?.id !== undefined && db.sessions.update(session.id, { end: undefined })
-  const burned = estimate ? `~${estimate.calories} cal burned` : ''
+  const end = () => running?.id !== undefined && db.sessions.update(running.id, { end: Date.now() })
+  const cancel = () => running?.id !== undefined && db.sessions.delete(running.id)
 
+  if (running) {
+    return (
+      <div className="card session">
+        <div className="big-number">
+          <strong className="session-clock">{clock(now - running.start)}</strong>
+          <span className="muted">{runningEstimate ? `~${runningEstimate.calories} cal this lift` : 'lifting'}</span>
+        </div>
+        <button className="btn" onClick={end}>
+          ■ End lift
+        </button>
+        {runningSets === 0 && (
+          <button className="btn ghost" onClick={cancel}>
+            Cancel
+          </button>
+        )}
+      </div>
+    )
+  }
   return (
     <div className="card session">
-      {active ? (
-        <>
-          <div className="big-number">
-            <strong className="session-clock">{clock(now - startTime)}</strong>
-            <span className="muted">{burned || 'lifting'}</span>
-          </div>
-          <button className="btn" onClick={end}>
-            ■ End lift
-          </button>
-          {!session && <p className="muted small">The timer started when you logged your first set.</p>}
-        </>
-      ) : session?.end ? (
-        <>
-          <div className="big-number">
-            <strong>{clock(session.end - session.start)}</strong>
-            <span className="muted">{burned || 'lifted today'}</span>
-          </div>
-          <p className="muted small">Lift ended. Tap Resume if you're not done.</p>
-          <button className="btn ghost" onClick={resume}>
-            Resume lift
-          </button>
-        </>
+      <button className="btn" onClick={start}>
+        ▶ Start lift
+      </button>
+      {today && today.calories > 0 ? (
+        <p className="muted small">
+          Today: {today.minutes} min of lifting, ~{today.calories} cal burned. Saved in History and added to today's food target.
+        </p>
       ) : (
-        <button className="btn" onClick={start}>
-          ▶ Start lift
-        </button>
+        <p className="muted small">Logging your first set starts the timer too. Calories burned are added to today's food target.</p>
       )}
-      <p className="muted small">Calories burned are added to today's food target. Logging your first set starts the timer too.</p>
     </div>
   )
 }
@@ -345,13 +340,14 @@ function ScanSheet({ photo, onPick, onClose }: { photo: string; onPick: (e: Exer
 
 const RIR_OPTIONS = [0, 1, 2, 3, 4]
 
-/** Log a set. The first set of the day starts the lift timer if Start lift wasn't pressed. */
+/** Log a set. Starts the lift timer if none is running, unless a lift ended in the last
+ * 15 minutes (then it's a set added after ending, and counts on its own). */
 function addSet(s: Omit<LiftSet, 'id' | 'time'>) {
   const time = Date.now()
   return db.transaction('rw', db.sets, db.sessions, async () => {
-    if (!(await db.sessions.where('date').equals(s.date).count())) {
-      await db.sessions.add({ date: s.date, start: time - 2 * 60000 })
-    }
+    const day = await db.sessions.where('date').equals(s.date).toArray()
+    const busy = day.some((x) => !x.end || time - x.end < 15 * 60000)
+    if (!busy) await db.sessions.add({ date: s.date, start: time - 2 * 60000 })
     await db.sets.add({ ...s, time })
   })
 }
@@ -526,30 +522,41 @@ function ExerciseSheet({ exercise, onClose }: { exercise: ExerciseDef; onClose: 
   )
 }
 
-function HistorySheet({ onClose }: { onClose: () => void }) {
+function HistorySheet({ weightLb, onClose }: { weightLb: number | undefined; onClose: () => void }) {
   const [shown, setShown] = useState(20)
   const sets = useLiveQuery(() => db.sets.toArray(), [])
+  const sessions = useLiveQuery(() => db.sessions.toArray(), [])
   const workouts = workoutsByDay(sets ?? [])
+  const burn = (date: string, daySets: LiftSet[]) =>
+    weightLb ? dayLift(daySets, weightLb, (sessions ?? []).filter((x) => x.date === date)) : null
 
   return (
     <Modal title="Workout history" onClose={onClose}>
       {sets && workouts.length === 0 && <p className="muted center">No workouts logged yet.</p>}
-      {workouts.slice(0, shown).map((w) => (
-        <details key={w.date} className="card history-day" open={w === workouts[0]}>
-          <summary>
-            <span>{w.date === todayStr() ? 'Today' : prettyDate(w.date)}</span>
-            <span className="muted small">
-              {plural(w.exercises.length, 'exercise')} · {plural(w.exercises.reduce((n, e) => n + e.sets.length, 0), 'set')}
-            </span>
-          </summary>
-          {w.exercises.map((e) => (
-            <div key={e.name} className="history-ex">
-              <div>{e.name}</div>
-              <div className="muted small">{e.sets.map((x) => `${x.weightLb}×${x.reps}`).join('  ')}</div>
-            </div>
-          ))}
-        </details>
-      ))}
+      {workouts.slice(0, shown).map((w) => {
+        const b = burn(w.date, w.exercises.flatMap((e) => e.sets))
+        const cal = new Map(b?.byExercise.map((e) => [e.name, e.calories]))
+        return (
+          <details key={w.date} className="card history-day" open={w === workouts[0]}>
+            <summary>
+              <span>{w.date === todayStr() ? 'Today' : prettyDate(w.date)}</span>
+              <span className="muted small">
+                {plural(w.exercises.length, 'exercise')} · {plural(w.exercises.reduce((n, e) => n + e.sets.length, 0), 'set')}
+                {b && ` · ${b.minutes} min · ~${b.calories} cal`}
+              </span>
+            </summary>
+            {w.exercises.map((e) => (
+              <div key={e.name} className="history-ex">
+                <div className="row-between">
+                  <span>{e.name}</span>
+                  {cal.has(e.name) && <span className="muted small">~{cal.get(e.name)} cal</span>}
+                </div>
+                <div className="muted small">{e.sets.map((x) => `${x.weightLb}×${x.reps}`).join('  ')}</div>
+              </div>
+            ))}
+          </details>
+        )
+      })}
       {workouts.length > shown && (
         <button className="btn ghost" onClick={() => setShown(shown + 20)}>
           Show older

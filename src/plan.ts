@@ -111,6 +111,29 @@ export function liftSession(
   }
 }
 
+/** All lifting on one day. Each set belongs to the timed lift it was logged during; sets logged
+ * outside any timed lift are estimated from the gaps between them. */
+export function dayLift(daySets: LiftSet[], weightLb: number, daySessions: LiftSession[], now = Date.now()): LiftEstimate {
+  const parts: LiftEstimate[] = []
+  let rest = daySets
+  for (const x of [...daySessions].sort((a, b) => a.start - b.start)) {
+    const inside = (s: LiftSet) => s.time >= x.start && s.time <= (x.end ?? Infinity)
+    parts.push(liftSession(rest.filter(inside), weightLb, x, now))
+    rest = rest.filter((s) => !inside(s))
+  }
+  if (rest.length) parts.push(liftSession(rest, weightLb))
+  const byName = new Map<string, { name: string; minutes: number; calories: number }>()
+  for (const e of parts.flatMap((p) => p.byExercise)) {
+    const cur = byName.get(e.name) ?? { name: e.name, minutes: 0, calories: 0 }
+    byName.set(e.name, { name: e.name, minutes: cur.minutes + e.minutes, calories: cur.calories + e.calories })
+  }
+  return {
+    minutes: parts.reduce((t, p) => t + p.minutes, 0),
+    calories: parts.reduce((t, p) => t + p.calories, 0),
+    byExercise: [...byName.values()],
+  }
+}
+
 /** Activity levels for life outside the gym (TDEE multipliers). */
 export const ACTIVITY = [
   { value: 1.2, label: 'Desk job, little walking' },
@@ -142,7 +165,7 @@ export function computeTargets(
 
   const setsByDay = new Map<string, LiftSet[]>()
   for (const s of sets) setsByDay.set(s.date, [...(setsByDay.get(s.date) ?? []), s])
-  const liftBurn = (d: string) => liftSession(setsByDay.get(d) ?? [], weight, sessions.find((x) => x.date === d))
+  const liftBurn = (d: string) => dayLift(setsByDay.get(d) ?? [], weight, sessions.filter((x) => x.date === d))
 
   // Formula estimate of maintenance calories on a rest day.
   let tdee = bmr(p, weight) * dailyActivity(p)

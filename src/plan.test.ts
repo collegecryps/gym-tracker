@@ -4,6 +4,7 @@ import {
   DEFAULT_EXERCISES,
   computeTargets,
   dailyActivity,
+  dayLift,
   liftSession,
   e1rm,
   isPyramid,
@@ -289,6 +290,14 @@ describe('lifting-day calories', () => {
     expect(lift.protein).toBe(rest.protein)
     expect(lift.carbs).toBeGreaterThan(rest.carbs)
     expect(computeTargets(profile, [], [], [at(0)], daysAgoStr(1)).calories).toBe(rest.calories)
+  })
+
+  it('adds up two lifts in one day and a set logged after ending', () => {
+    const a = { date: daysAgoStr(0), start: t0 - 2 * 60000, end: t0 + 10 * 60000 }
+    const b = { date: daysAgoStr(0), start: t0 + 120 * 60000, end: t0 + 130 * 60000 }
+    // lift a: 2 + 8 + tail 2 = 12; stray set: 2; lift b: 10 + tail 0 = 10
+    const e = dayLift([at(0), at(8), at(60), at(130)], 175, [b, a])
+    expect(e.minutes).toBe(24)
   })
 
   it('maps old activity levels (which included lifting) to outside-the-gym levels', () => {

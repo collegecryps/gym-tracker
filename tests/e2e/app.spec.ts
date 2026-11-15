@@ -567,7 +567,7 @@ test('installable on the home screen', async ({ page }) => {
   await expect(page.locator('meta[name=apple-mobile-web-app-capable]')).toHaveAttribute('content', 'yes')
 })
 
-test('start lift: timer runs, finish adds the burn to the food target', async ({ page }) => {
+test('start lift: timer runs, end saves it and resets the card', async ({ page }) => {
   await page.clock.install()
   await onboard(page)
   await page.locator('.tabbar').getByText('Lift').click()
@@ -575,15 +575,24 @@ test('start lift: timer runs, finish adds the burn to the food target', async ({
   await page.clock.fastForward('10:00')
   await expect(page.locator('.session-clock')).toHaveText(/^10:0\d$/)
   await page.getByRole('button', { name: '■ End lift' }).click()
-  await expect(page.getByRole('button', { name: 'Resume lift' })).toBeVisible()
   // 10 min × (3.5 − 1) METs × 79.4 kg ≈ 33 cal
-  await expect(page.locator('.session')).toContainText('~33 cal burned')
+  await expect(page.getByRole('button', { name: '▶ Start lift' })).toBeVisible()
+  await expect(page.locator('.session')).toContainText('Today: 10 min of lifting, ~33 cal burned')
   await page.locator('.tabbar').getByText('Food').click()
   await expect(page.getByText('Includes +33 cal for 10 min of lifting.')).toBeVisible()
   await expect(page.locator('.big-number strong')).toHaveText('3183')
 })
 
-test('logging a set starts the lift timer, and End lift stops it', async ({ page }) => {
+test('cancel a lift started by mistake', async ({ page }) => {
+  await onboard(page)
+  await page.locator('.tabbar').getByText('Lift').click()
+  await page.getByRole('button', { name: '▶ Start lift' }).click()
+  await page.getByRole('button', { name: 'Cancel' }).click()
+  await expect(page.getByRole('button', { name: '▶ Start lift' })).toBeVisible()
+  await expect(page.locator('.session')).not.toContainText('Today:')
+})
+
+test('logging a set starts the lift timer; ended lift shows in history', async ({ page }) => {
   await onboard(page)
   await openExercise(page, 'bench', /^Bench Press/)
   await page.getByLabel('Weight lb', { exact: true }).fill('135')
@@ -591,7 +600,10 @@ test('logging a set starts the lift timer, and End lift stops it', async ({ page
   await page.getByRole('button', { name: 'Log set' }).click()
   await page.getByRole('button', { name: 'Close' }).click()
   await expect(page.locator('.session-clock')).toHaveText(/^2:0\d$/)
+  await expect(page.getByRole('button', { name: 'Cancel' })).toHaveCount(0)
   await page.getByRole('button', { name: '■ End lift' }).click()
-  await expect(page.locator('.session')).toContainText('Lift ended')
-  await expect(page.getByRole('button', { name: '▶ Start lift' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '▶ Start lift' })).toBeVisible()
+  await page.getByRole('button', { name: '📅 History' }).click()
+  await expect(page.locator('.history-day').first()).toContainText('2 min · ~7 cal')
+  await expect(page.locator('.history-ex', { hasText: 'Bench Press' })).toContainText('~7 cal')
 })
