@@ -62,7 +62,12 @@ export function LiftTab({ profile }: { profile: Profile }) {
     <div className="page">
       <h1>Lift</h1>
 
-      <SessionCard session={session} estimate={estimate} now={now} hasSets={todaySets.length > 0} />
+      <SessionCard
+        session={session}
+        estimate={estimate}
+        now={now}
+        firstSet={todaySets.length ? Math.min(...todaySets.map((x) => x.time)) : null}
+      />
 
       <TodayPlan lib={lib} onOpen={setOpen} />
 
@@ -231,54 +236,54 @@ function SessionCard({
   session,
   estimate,
   now,
-  hasSets,
+  firstSet,
 }: {
   session: LiftSession | undefined
   estimate: LiftEstimate | null
   now: number
-  hasSets: boolean
+  firstSet: number | null
 }) {
-  const active = session && !session.end
+  // Sets logged before the timer existed: treat the lift as started at the first set.
+  const startTime = session?.start ?? (firstSet !== null ? firstSet - 2 * 60000 : null)
+  const active = startTime !== null && !session?.end
   const start = () => db.sessions.add({ date: todayStr(), start: Date.now() })
-  const finish = () => session?.id !== undefined && db.sessions.update(session.id, { end: Date.now() })
+  const end = () =>
+    session?.id !== undefined
+      ? db.sessions.update(session.id, { end: Date.now() })
+      : startTime !== null && db.sessions.add({ date: todayStr(), start: startTime, end: Date.now() })
   const resume = () => session?.id !== undefined && db.sessions.update(session.id, { end: undefined })
-  const burned = estimate && (session || hasSets) ? `~${estimate.calories} cal burned` : ''
+  const burned = estimate ? `~${estimate.calories} cal burned` : ''
 
   return (
     <div className="card session">
       {active ? (
         <>
           <div className="big-number">
-            <strong className="session-clock">{clock(now - session.start)}</strong>
+            <strong className="session-clock">{clock(now - startTime)}</strong>
             <span className="muted">{burned || 'lifting'}</span>
           </div>
-          <button className="btn" onClick={finish}>
-            Finish lift
+          <button className="btn" onClick={end}>
+            ■ End lift
           </button>
+          {!session && <p className="muted small">The timer started when you logged your first set.</p>}
         </>
-      ) : session ? (
+      ) : session?.end ? (
         <>
           <div className="big-number">
-            <strong>{clock(session.end! - session.start)}</strong>
+            <strong>{clock(session.end - session.start)}</strong>
             <span className="muted">{burned || 'lifted today'}</span>
           </div>
+          <p className="muted small">Lift ended. Tap Resume if you're not done.</p>
           <button className="btn ghost" onClick={resume}>
-            Keep lifting
+            Resume lift
           </button>
         </>
       ) : (
-        <>
-          {hasSets && estimate && (
-            <p className="muted small">
-              About {estimate.minutes} min, ~{estimate.calories} cal so far, estimated from when you logged sets.
-            </p>
-          )}
-          <button className="btn" onClick={start}>
-            ▶ Start lift
-          </button>
-        </>
+        <button className="btn" onClick={start}>
+          ▶ Start lift
+        </button>
       )}
-      <p className="muted small">Calories burned are added to today's food target.</p>
+      <p className="muted small">Calories burned are added to today's food target. Logging your first set starts the timer too.</p>
     </div>
   )
 }
@@ -340,8 +345,15 @@ function ScanSheet({ photo, onPick, onClose }: { photo: string; onPick: (e: Exer
 
 const RIR_OPTIONS = [0, 1, 2, 3, 4]
 
+/** Log a set. The first set of the day starts the lift timer if Start lift wasn't pressed. */
 function addSet(s: Omit<LiftSet, 'id' | 'time'>) {
-  return db.sets.add({ ...s, time: Date.now() })
+  const time = Date.now()
+  return db.transaction('rw', db.sets, db.sessions, async () => {
+    if (!(await db.sessions.where('date').equals(s.date).count())) {
+      await db.sessions.add({ date: s.date, start: time - 2 * 60000 })
+    }
+    await db.sets.add({ ...s, time })
+  })
 }
 
 const fmt = (s: { weightLb: number; reps: number }) => `${s.weightLb} × ${s.reps}`
