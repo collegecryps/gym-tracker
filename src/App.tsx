@@ -32,7 +32,7 @@ export default function App() {
     <div className="app">
       <main>
         {tab === 'food' && <FoodTab profile={profile} />}
-        {tab === 'lift' && <LiftTab />}
+        {tab === 'lift' && <LiftTab profile={profile} />}
         {tab === 'weight' && <WeightTab profile={profile} />}
         {tab === 'more' && <MoreTab profile={profile} />}
       </main>

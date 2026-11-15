@@ -1,4 +1,4 @@
-import type { Food, LiftSet, Profile, WeighIn } from './db'
+import { todayStr, type Food, type LiftSession, type LiftSet, type Profile, type WeighIn } from './db'
 
 // ---------- Nutrition targets (lean bulk) ----------
 
@@ -13,6 +13,9 @@ export interface Targets {
   targetRateLb: number // lb per week
   actualRateLb: number | null
   coaching: string
+  /** Calories for a rest day. On lifting days `calories` = this + liftCalories. */
+  baseCalories: number
+  lift: LiftEstimate
 }
 
 const LB_PER_KG = 2.20462
@@ -51,13 +54,98 @@ export function currentWeight(p: Profile, weighIns: WeighIn[]): number {
   return recent.reduce((s, w) => s + w.weightLb, 0) / recent.length
 }
 
-export function computeTargets(p: Profile, weighIns: WeighIn[], foods: Food[]): Targets {
+// ---------- Lifting-day calories ----------
+
+/** 2024 Compendium of Physical Activities. 1 MET ≈ 1 kcal per kg per hour.
+ * 02054 resistance training, multiple exercises, 8–15 reps = 3.5 METs.
+ * 02052 resistance training, squats and deadlifts = 5.0 METs. */
+export const LIFT_METS = 3.5
+export const SQUAT_DEADLIFT_METS = 5.0
+// Minimum time counted for one set (the set itself plus a short rest).
+const MIN_PER_SET = 2
+// A gap longer than this between sets is a break (or logging later), not rest between sets.
+const MAX_GAP_MIN = 15
+
+export function liftMets(exercise: string): number {
+  return /squat|deadlift/i.test(exercise) ? SQUAT_DEADLIFT_METS : LIFT_METS
+}
+
+export interface LiftEstimate {
+  minutes: number
+  calories: number
+  byExercise: { name: string; minutes: number; calories: number }[]
+}
+
+/** Estimate a lifting day. Each set gets the time since the set before it (or since Start lift),
+ * between 2 and 15 minutes; with a session, the time after the last set goes to the last exercise.
+ * Calories are those burned above resting (MET − 1), which the daily target already covers. */
+export function liftSession(
+  daySets: LiftSet[],
+  weightLb: number,
+  session?: LiftSession,
+  now = Date.now(),
+): LiftEstimate {
+  const kg = weightLb / LB_PER_KG
+  const sets = [...daySets].sort((a, b) => a.time - b.time)
+  const mins = new Map<string, number>()
+  const add = (name: string, m: number) => mins.set(name, (mins.get(name) ?? 0) + m)
+  const clamp = (m: number, lo: number) => Math.min(Math.max(m, lo), MAX_GAP_MIN)
+  let prev = session?.start
+  for (const s of sets) {
+    add(s.exercise, prev === undefined ? MIN_PER_SET : clamp((s.time - prev) / 60000, MIN_PER_SET))
+    prev = s.time
+  }
+  if (session && prev !== undefined) {
+    const tail = clamp(((session.end ?? now) - prev) / 60000, 0)
+    add(sets.length ? sets[sets.length - 1].exercise : 'Warm-up', tail)
+  }
+  const byExercise = [...mins].map(([name, m]) => ({
+    name,
+    minutes: m,
+    calories: ((liftMets(name) - 1) * kg * m) / 60,
+  }))
+  return {
+    minutes: Math.round(byExercise.reduce((t, e) => t + e.minutes, 0)),
+    calories: Math.round(byExercise.reduce((t, e) => t + e.calories, 0)),
+    byExercise: byExercise.map((e) => ({ ...e, minutes: Math.round(e.minutes), calories: Math.round(e.calories) })),
+  }
+}
+
+/** Activity levels for life outside the gym (TDEE multipliers). */
+export const ACTIVITY = [
+  { value: 1.2, label: 'Desk job, little walking' },
+  { value: 1.375, label: 'Desk job, walk some most days' },
+  { value: 1.55, label: 'On my feet most of the day' },
+  { value: 1.725, label: 'Physical job (construction, warehouse)' },
+]
+
+// Older profiles picked an activity level that already included lifting. Lifting is now added per
+// day, so map those to the matching level for life outside the gym.
+const LEGACY_ACTIVITY: Record<number, number> = { 1.375: 1.375, 1.55: 1.375, 1.725: 1.55, 1.9: 1.725 }
+
+/** Activity multiplier for daily life, not counting lifting. */
+export function dailyActivity(p: Profile): number {
+  return p.activityExcludesLifting ? p.activity : (LEGACY_ACTIVITY[p.activity] ?? p.activity)
+}
+
+export function computeTargets(
+  p: Profile,
+  weighIns: WeighIn[],
+  foods: Food[],
+  sets: LiftSet[] = [],
+  date = todayStr(),
+  sessions: LiftSession[] = [],
+): Targets {
   const weight = currentWeight(p, weighIns)
   const targetRateLb = (weight * p.gainPctPerWeek) / 100
   const actualRateLb = weightRate(weighIns)
 
-  // Formula estimate of maintenance calories.
-  let tdee = bmr(p, weight) * p.activity
+  const setsByDay = new Map<string, LiftSet[]>()
+  for (const s of sets) setsByDay.set(s.date, [...(setsByDay.get(s.date) ?? []), s])
+  const liftBurn = (d: string) => liftSession(setsByDay.get(d) ?? [], weight, sessions.find((x) => x.date === d))
+
+  // Formula estimate of maintenance calories on a rest day.
+  let tdee = bmr(p, weight) * dailyActivity(p)
   let tdeeSource: Targets['tdeeSource'] = 'formula'
 
   // If there's enough logging, learn real maintenance from what was eaten vs. how weight moved.
@@ -67,17 +155,22 @@ export function computeTargets(p: Profile, weighIns: WeighIn[], foods: Food[]): 
     for (const f of foods) {
       if (new Date(f.date + 'T12:00').getTime() >= cutoff) byDay.set(f.date, (byDay.get(f.date) ?? 0) + f.calories)
     }
-    const loggedDays = [...byDay.values()].filter((c) => c > 800) // skip days clearly not fully logged
+    const loggedDays = [...byDay].filter(([, c]) => c > 800) // skip days clearly not fully logged
     if (loggedDays.length >= 10) {
-      const avgIntake = loggedDays.reduce((s, c) => s + c, 0) / loggedDays.length
-      const learned = avgIntake - (actualRateLb * 3500) / 7
+      const avgIntake = loggedDays.reduce((s, [, c]) => s + c, 0) / loggedDays.length
+      // Lifting calories are added back on lifting days, so learn rest-day maintenance.
+      const avgLift = loggedDays.reduce((s, [d]) => s + liftBurn(d).calories, 0) / loggedDays.length
+      const learned = avgIntake - avgLift - (actualRateLb * 3500) / 7
       // Keep it sane: never drift more than 30% from the formula.
       tdee = Math.min(Math.max(learned, tdee * 0.7), tdee * 1.3)
       tdeeSource = 'your data'
     }
   }
 
-  const calories = Math.round((tdee + (targetRateLb * 3500) / 7) / 10) * 10
+  const baseCalories = Math.round((tdee + (targetRateLb * 3500) / 7) / 10) * 10
+  const lift = liftBurn(date)
+  const calories = baseCalories + lift.calories
+  // Protein and fat are set by bodyweight, so lifting calories go to carbs.
   const protein = Math.round(weight * 1.0)
   const fat = Math.round(weight * 0.35)
   const carbs = Math.max(0, Math.round((calories - protein * 4 - fat * 9) / 4))
@@ -104,6 +197,8 @@ export function computeTargets(p: Profile, weighIns: WeighIn[], foods: Food[]): 
     targetRateLb,
     actualRateLb,
     coaching,
+    baseCalories,
+    lift,
   }
 }
 

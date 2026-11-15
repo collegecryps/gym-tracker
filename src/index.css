@@ -274,10 +274,17 @@ label {
 
 .vol-row {
   display: grid;
-  grid-template-columns: 82px 1fr 32px 24px;
-  align-items: center;
-  gap: 8px;
+  gap: 4px;
   font-size: 13px;
+  margin-top: 10px;
+}
+.vol-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.vol-name {
+  font-weight: 600;
 }
 .vol-track {
   position: relative;
@@ -676,4 +683,11 @@ summary {
 .sets-count {
   min-width: 56px;
   text-align: center;
+}
+
+.session-clock {
+  font-variant-numeric: tabular-nums;
+}
+.right {
+  text-align: right;
 }

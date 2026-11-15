@@ -56,8 +56,8 @@ export function WeightTab({ profile }: { profile: Profile }) {
           </div>
           <p className="tip">{targets.coaching}</p>
           <p className="muted small">
-            Daily plan: {targets.calories} cal · {targets.protein}g protein · {targets.carbs}g carbs · {targets.fat}g fat. Maintenance ≈{' '}
-            {targets.tdee} cal ({targets.tdeeSource === 'formula' ? 'formula estimate until you have 2–3 weeks of data' : 'learned from your logs'}).
+            Rest-day plan: {targets.baseCalories} cal · {targets.protein}g protein · {targets.fat}g fat, rest from carbs. Lifting days add
+            what the lift burned, as carbs. Rest-day maintenance ≈ {targets.tdee} cal ({targets.tdeeSource === 'formula' ? 'formula estimate until you have 2–3 weeks of data' : 'learned from your logs'}).
           </p>
         </div>
       )}

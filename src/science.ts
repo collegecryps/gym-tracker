@@ -137,4 +137,15 @@ export const PRINCIPLES: Principle[] = [
       },
     ],
   },
+  {
+    rule: 'Lifting days get the calories the workout burned',
+    detail:
+      'Your daily target covers life outside the gym. On days you lift, the app adds the calories the session burned on top of resting: time spent on each exercise × its MET value × your bodyweight. Most lifting counts as 3.5 METs; squats and deadlifts count as 5. Time comes from Start lift / Finish, or from when you logged each set, with breaks over 15 minutes left out. These are estimates; the weight-trend check corrects any error over a few weeks.',
+    sources: [
+      {
+        cite: 'Herrmann et al. (2024), J Sport Health Sci: 2024 Adult Compendium of Physical Activities (codes 02052, 02054)',
+        url: 'https://pubmed.ncbi.nlm.nih.gov/38242596/',
+      },
+    ],
+  },
 ]

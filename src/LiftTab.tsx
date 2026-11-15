@@ -1,13 +1,16 @@
 import { useLiveQuery } from 'dexie-react-hooks'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { analyzeEquipment, shrinkImage, type EquipmentGuess } from './ai'
-import { daysAgoStr, db, todayStr, type LiftSet } from './db'
+import { daysAgoStr, db, todayStr, type LiftSession, type LiftSet, type Profile } from './db'
 import {
   DEFAULT_EXERCISES,
   MUSCLES,
   VOLUME_MAX,
+  HARD_SET_MAX_RIR,
   VOLUME_MIN,
   e1rm,
+  liftSession,
+  type LiftEstimate,
   lastSession,
   nextSessionSuggestion,
   nextSetPrefill,
@@ -18,7 +21,7 @@ import {
   weeklySetsByMuscle,
   type ExerciseDef,
 } from './plan'
-import { plural, prettyDate } from './helpers'
+import { plural, prettyDate, useTargets } from './helpers'
 import { LineChart } from './LineChart'
 import { TodayPlan } from './WorkoutPlan'
 import { Photo, Modal, PhotoButton } from './ui'
@@ -34,8 +37,11 @@ function useLibrary(): { list: ExerciseDef[]; lookup: (name: string) => Exercise
   }, [custom])
 }
 
-export function LiftTab() {
+export function LiftTab({ profile }: { profile: Profile }) {
   const today = todayStr()
+  const targets = useTargets(profile)
+  const session = useLiveQuery(() => db.sessions.where('date').equals(today).last(), [today])
+  const now = useNow(session && !session.end ? 1000 : 30000)
   const lib = useLibrary()
   const [open, setOpen] = useState<ExerciseDef | null>(null)
   const [picking, setPicking] = useState(false)
@@ -46,12 +52,17 @@ export function LiftTab() {
   const todaySets = (weekSets ?? []).filter((s) => s.date === today)
   const todayExercises = [...new Set(todaySets.map((s) => s.exercise))]
 
+  const estimate = targets ? liftSession(todaySets, targets.currentWeight, session, now) : null
+  const exerciseCal = new Map(estimate?.byExercise.map((e) => [e.name, e.calories]))
+
   const volume = weeklySetsByMuscle(weekSets ?? [], lib.lookup)
   const freq = weeklyFrequencyByMuscle(weekSets ?? [])
 
   return (
     <div className="page">
       <h1>Lift</h1>
+
+      <SessionCard session={session} estimate={estimate} now={now} hasSets={todaySets.length > 0} />
 
       <TodayPlan lib={lib} onOpen={setOpen} />
 
@@ -84,7 +95,10 @@ export function LiftTab() {
                   <div>{name}</div>
                   <div className="muted small">{s.map((x) => `${x.weightLb}×${x.reps}`).join('  ')}</div>
                 </div>
-                <span className="muted">{s.length} sets</span>
+                <span className="muted small right">
+                  {plural(s.length, 'set')}
+                  {exerciseCal.has(name) && <div>~{exerciseCal.get(name)} cal</div>}
+                </span>
               </button>
             )
           })}
@@ -92,23 +106,37 @@ export function LiftTab() {
       )}
 
       <div className="card">
-        <h3>Hard sets this week</h3>
+        <h3>Hard sets, last 7 days</h3>
         <p className="muted small">
-          Target {VOLUME_MIN}–{VOLUME_MAX} per muscle, trained on 2+ days (the “d” column). Helper muscles on compound lifts count half.
+          A hard set is a working set you take close to failure, with {HARD_SET_MAX_RIR} or fewer reps left in the tank. Warm-ups
+          don't count. Aim for {VOLUME_MIN}–{VOLUME_MAX} per muscle, spread over 2 or more days. When a muscle only helps (triceps
+          on bench press), the set counts as half.
         </p>
         {MUSCLES.map((m) => {
           const v = volume.get(m) ?? 0
           const f = freq.get(m) ?? 0
           const status = v < VOLUME_MIN ? 'low' : v > VOLUME_MAX ? 'high' : 'good'
+          const need = Math.ceil(VOLUME_MIN - v)
+          const label =
+            v === 0 ? 'Not trained yet' : status === 'low' ? `${need} more to go` : status === 'good' ? 'In range' : 'Above range, extra sets add little'
+          const days = f === 0 ? '' : f === 1 ? '1 day, aim for 2' : `${f} days`
           return (
             <div key={m} className="vol-row">
-              <span className="vol-name">{m}</span>
+              <div className="vol-head">
+                <span className="vol-name">{m}</span>
+                <span className="muted small grow">
+                  {label}
+                  {days && <span className={f === 1 ? 'warn' : ''}> · {days}</span>}
+                </span>
+                <span>
+                  <span className={`vol-num ${status}`}>{Number.isInteger(v) ? v : v.toFixed(1)}</span>
+                  <span className="muted small"> / {VOLUME_MIN}–{VOLUME_MAX}</span>
+                </span>
+              </div>
               <div className="vol-track">
                 <div className="vol-zone" style={{ left: `${(VOLUME_MIN / 25) * 100}%`, width: `${((VOLUME_MAX - VOLUME_MIN) / 25) * 100}%` }} />
                 <div className={`vol-fill ${status}`} style={{ width: `${Math.min(100, (v / 25) * 100)}%` }} />
               </div>
-              <span className={`vol-num ${status}`}>{Number.isInteger(v) ? v : v.toFixed(1)}</span>
-              <span className={`muted small vol-freq ${f === 1 ? 'warn' : ''}`}>{f > 0 ? `${f}d` : ''}</span>
             </div>
           )
         })}
@@ -178,6 +206,80 @@ function ExercisePicker({ list, onPick, onClose }: { list: ExerciseDef[]; onPick
         ))}
       </div>
     </Modal>
+  )
+}
+
+/** Current time, refreshed every `ms`. */
+function useNow(ms: number): number {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), ms)
+    return () => clearInterval(id)
+  }, [ms])
+  return now
+}
+
+function clock(ms: number): string {
+  const t = Math.max(0, Math.floor(ms / 1000))
+  const h = Math.floor(t / 3600)
+  const m = String(Math.floor((t % 3600) / 60)).padStart(2, '0')
+  const sec = String(t % 60).padStart(2, '0')
+  return h ? `${h}:${m}:${sec}` : `${Math.floor(t / 60)}:${sec}`
+}
+
+function SessionCard({
+  session,
+  estimate,
+  now,
+  hasSets,
+}: {
+  session: LiftSession | undefined
+  estimate: LiftEstimate | null
+  now: number
+  hasSets: boolean
+}) {
+  const active = session && !session.end
+  const start = () => db.sessions.add({ date: todayStr(), start: Date.now() })
+  const finish = () => session?.id !== undefined && db.sessions.update(session.id, { end: Date.now() })
+  const resume = () => session?.id !== undefined && db.sessions.update(session.id, { end: undefined })
+  const burned = estimate && (session || hasSets) ? `~${estimate.calories} cal burned` : ''
+
+  return (
+    <div className="card session">
+      {active ? (
+        <>
+          <div className="big-number">
+            <strong className="session-clock">{clock(now - session.start)}</strong>
+            <span className="muted">{burned || 'lifting'}</span>
+          </div>
+          <button className="btn" onClick={finish}>
+            Finish lift
+          </button>
+        </>
+      ) : session ? (
+        <>
+          <div className="big-number">
+            <strong>{clock(session.end! - session.start)}</strong>
+            <span className="muted">{burned || 'lifted today'}</span>
+          </div>
+          <button className="btn ghost" onClick={resume}>
+            Keep lifting
+          </button>
+        </>
+      ) : (
+        <>
+          {hasSets && estimate && (
+            <p className="muted small">
+              About {estimate.minutes} min, ~{estimate.calories} cal so far, estimated from when you logged sets.
+            </p>
+          )}
+          <button className="btn" onClick={start}>
+            ▶ Start lift
+          </button>
+        </>
+      )}
+      <p className="muted small">Calories burned are added to today's food target.</p>
+    </div>
   )
 }
 

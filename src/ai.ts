@@ -15,34 +15,72 @@ export interface EquipmentGuess {
   exercises: { name: string; muscle: string; secondary: string[]; cue: string }[]
 }
 
+// Backup model when the chosen one is overloaded or out of free quota. An alias, so it keeps
+// pointing at Google's newest Flash-Lite model without app updates.
+const FALLBACK_MODEL = 'gemini-flash-lite-latest'
+// Waits before each retry of the same model when Google is busy (503/500).
+const RETRY_WAITS_MS = [1500, 4000]
+
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+class GeminiError extends Error {
+  status: number
+  constructor(message: string, status: number) {
+    super(message)
+    this.status = status
+  }
+}
+
+async function callModel(key: string, model: string, body: string): Promise<string> {
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+    body,
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => null)
+    throw new GeminiError(err?.error?.message ?? `Photo recognition failed (${res.status})`, res.status)
+  }
+  const data = await res.json()
+  const text: string | undefined = data?.candidates?.[0]?.content?.parts?.[0]?.text
+  if (!text) throw new GeminiError('No answer from the photo service. Try another photo.', 0)
+  return text
+}
+
 async function ask<T>(key: string, model: string, image: string, prompt: string, schema: object): Promise<T> {
   const m = /^data:([^;]+);base64,(.+)$/.exec(image)
   if (!m) throw new Error('Could not read photo')
   if (!key) throw new Error('Add your free Gemini key in Settings to use photo recognition.')
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [{ inline_data: { mime_type: m[1], data: m[2] } }, { text: prompt }],
-          },
-        ],
-        generationConfig: { responseMimeType: 'application/json', responseSchema: schema, temperature: 0.2 },
-      }),
-    },
-  )
-  if (res.status === 429) throw new Error('Free daily photo limit reached. Enter the numbers by hand or try later.')
-  if (!res.ok) {
-    const body = await res.json().catch(() => null)
-    throw new Error(body?.error?.message ?? `Photo recognition failed (${res.status})`)
+  const body = JSON.stringify({
+    contents: [{ parts: [{ inline_data: { mime_type: m[1], data: m[2] } }, { text: prompt }] }],
+    generationConfig: { responseMimeType: 'application/json', responseSchema: schema, temperature: 0.2 },
+  })
+
+  const models = [...new Set([model.trim() || FALLBACK_MODEL, FALLBACK_MODEL])]
+  let last: GeminiError | null = null
+  for (const [i, name] of models.entries()) {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return JSON.parse(await callModel(key, name, body)) as T
+      } catch (e) {
+        if (!(e instanceof GeminiError)) throw e
+        // Bad key or bad request: switching models won't help.
+        if (e.status === 400 || e.status === 401 || e.status === 403) throw e
+        last = e
+        const busy = e.status === 503 || e.status === 500
+        if (busy && attempt < RETRY_WAITS_MS.length) {
+          await wait(RETRY_WAITS_MS[attempt])
+          continue
+        }
+        // 429 (this model's free limit), 404 (model retired) or still busy: try the backup model.
+        if (i < models.length - 1) break
+        if (e.status === 429) throw new Error('Free daily photo limit reached. Enter the numbers by hand or try later.')
+        if (busy) throw new Error("Google's photo service is busy right now. Try again in a minute, or enter the numbers by hand.")
+        throw e
+      }
+    }
   }
-  const data = await res.json()
-  const text: string | undefined = data?.candidates?.[0]?.content?.parts?.[0]?.text
-  if (!text) throw new Error('No answer from the photo service. Try another photo.')
-  return JSON.parse(text) as T
+  throw last ?? new Error('Photo recognition failed')
 }
 
 export function analyzeFood(key: string, model: string, image: string, hint: string): Promise<FoodGuess> {

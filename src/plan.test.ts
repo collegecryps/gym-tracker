@@ -3,6 +3,8 @@ import { daysAgoStr, type Food, type LiftSet, type Profile, type WeighIn } from 
 import {
   DEFAULT_EXERCISES,
   computeTargets,
+  dailyActivity,
+  liftSession,
   e1rm,
   isPyramid,
   nextSessionSuggestion,
@@ -22,6 +24,7 @@ const profile: Profile = {
   heightIn: 72,
   startWeightLb: 175,
   activity: 1.55,
+  activityExcludesLifting: true,
   gainPctPerWeek: 0.375,
   geminiKey: '',
   geminiModel: 'x',
@@ -248,5 +251,49 @@ describe('history and progress', () => {
       { date: d1, value: 193, note: '165 × 5' },
       { date: d2, value: 210, note: '175 × 6' },
     ])
+  })
+})
+
+describe('lifting-day calories', () => {
+  const t0 = new Date(daysAgoStr(0) + 'T17:00').getTime()
+  const at = (min: number, exercise = 'Bench Press') => set({ time: t0 + min * 60000, exercise })
+
+  it('counts time between sets, 2 min minimum, 15 min maximum', () => {
+    // first set 2 + gap 3 + gap 1→2 + gap 40→15 = 22 min
+    const e = liftSession([at(0), at(3), at(4), at(44)], 175)
+    expect(e.minutes).toBe(22)
+    // (3.5 − 1) METs × 79.4 kg × 22/60 h ≈ 73
+    expect(e.calories).toBe(73)
+  })
+
+  it('splits by exercise and rates squats and deadlifts higher', () => {
+    const e = liftSession([at(0, 'Squat'), at(10, 'Squat'), at(20, 'Leg Curl'), at(30, 'Leg Curl')], 175)
+    const squat = e.byExercise.find((x) => x.name === 'Squat')!
+    const curl = e.byExercise.find((x) => x.name === 'Leg Curl')!
+    expect(squat.minutes).toBe(12)
+    expect(curl.minutes).toBe(20)
+    expect(squat.calories / squat.minutes).toBeGreaterThan(curl.calories / curl.minutes)
+  })
+
+  it('uses Start lift time and counts time after the last set', () => {
+    const session = { date: daysAgoStr(0), start: t0 - 10 * 60000, end: t0 + 20 * 60000 }
+    // start→set 10, set→set 10, last set→finish 10
+    expect(liftSession([at(0), at(10)], 175, session).minutes).toBe(30)
+  })
+
+  it('adds the burn to that day only, as carbs', () => {
+    const rest = computeTargets(profile, [], [])
+    const lift = computeTargets(profile, [], [], [at(0), at(3), at(4), at(44)])
+    expect(lift.calories - rest.calories).toBe(73)
+    expect(lift.baseCalories).toBe(rest.calories)
+    expect(lift.protein).toBe(rest.protein)
+    expect(lift.carbs).toBeGreaterThan(rest.carbs)
+    expect(computeTargets(profile, [], [], [at(0)], daysAgoStr(1)).calories).toBe(rest.calories)
+  })
+
+  it('maps old activity levels (which included lifting) to outside-the-gym levels', () => {
+    expect(dailyActivity({ ...profile, activityExcludesLifting: undefined, activity: 1.55 })).toBe(1.375)
+    expect(dailyActivity({ ...profile, activityExcludesLifting: undefined, activity: 1.725 })).toBe(1.55)
+    expect(dailyActivity({ ...profile, activity: 1.2 })).toBe(1.2)
   })
 })

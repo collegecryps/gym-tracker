@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { db, exportBackup, importBackup, todayStr, type Profile } from './db'
+import { ACTIVITY, dailyActivity } from './plan'
 import { PRINCIPLES } from './science'
 
 export function MoreTab({ profile }: { profile: Profile }) {
@@ -90,12 +91,19 @@ export function MoreTab({ profile }: { profile: Profile }) {
           </label>
         </div>
         <label>
-          Activity
-          <select value={p.activity} onChange={num('activity')}>
-            <option value={1.375}>Lift 3–4 days, desk job</option>
-            <option value={1.55}>Lift 4–6 days, desk job</option>
-            <option value={1.725}>Lift 4–6 days, on my feet all day</option>
-            <option value={1.9}>Lift + physical job or sports</option>
+          Activity outside the gym
+          <select
+            value={dailyActivity(p)}
+            onChange={(e) => {
+              setP({ ...p, activity: +e.target.value, activityExcludesLifting: true })
+              setSaved(false)
+            }}
+          >
+            {ACTIVITY.map((a) => (
+              <option key={a.value} value={a.value}>
+                {a.label}
+              </option>
+            ))}
           </select>
         </label>
         <label>

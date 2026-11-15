@@ -23,7 +23,7 @@ export function FoodTab({ profile }: { profile: Profile }) {
   const [date, setDate] = useState(todayStr())
   const [draft, setDraft] = useState<Draft | null>(null)
   const [showHistory, setShowHistory] = useState(false)
-  const targets = useTargets(profile)
+  const targets = useTargets(profile, date)
   const foods = useLiveQuery(() => db.foods.where('date').equals(date).sortBy('time'), [date])
 
   const totals = (foods ?? []).reduce(
@@ -58,6 +58,11 @@ export function FoodTab({ profile }: { profile: Profile }) {
             <strong className={left < 0 ? 'warn' : ''}>{Math.abs(Math.round(left))}</strong>
             <span className="muted">{left >= 0 ? 'calories left' : 'calories over'}</span>
           </div>
+          {targets.lift.calories > 0 && (
+            <p className="muted small center">
+              Includes +{targets.lift.calories} cal for {targets.lift.minutes} min of lifting.
+            </p>
+          )}
           <Bar label="Calories" value={totals.calories} target={targets.calories} unit="" />
           <Bar label="Protein" value={totals.protein} target={targets.protein} />
           <Bar label="Carbs" value={totals.carbs} target={targets.carbs} />

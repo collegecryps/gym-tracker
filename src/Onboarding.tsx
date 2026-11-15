@@ -1,14 +1,9 @@
 import { useState } from 'react'
 import { db, type Profile, type Sex } from './db'
+import { ACTIVITY } from './plan'
 
 // One question per screen, like Noom's intake quiz.
 
-const ACTIVITY = [
-  { value: 1.375, label: 'Lift 3–4 days, desk job' },
-  { value: 1.55, label: 'Lift 4–6 days, desk job' },
-  { value: 1.725, label: 'Lift 4–6 days, on my feet all day' },
-  { value: 1.9, label: 'Lift + physical job or sports' },
-]
 
 const PACE = [
   { value: 0.25, label: 'Lean', sub: '0.25% of bodyweight a week. Least fat gain. Best if you have lifted 2+ years.' },
@@ -24,7 +19,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
   const [ft, setFt] = useState('')
   const [inch, setInch] = useState('')
   const [weight, setWeight] = useState('')
-  const [activity, setActivity] = useState(1.55)
+  const [activity, setActivity] = useState(1.375)
   const [pace, setPace] = useState(0.375)
 
   const steps = [
@@ -69,7 +64,8 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
       body: <input className="big-input" inputMode="decimal" value={weight} onChange={(e) => setWeight(e.target.value)} placeholder="lb" />,
     },
     {
-      q: 'How active are you?',
+      q: 'How active are you outside the gym?',
+      sub: "Don't count lifting. The app adds what each workout burns on the day you lift.",
       ok: true,
       body: (
         <div className="choices">
@@ -110,6 +106,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
       heightIn: +ft * 12 + +inch,
       startWeightLb: +weight,
       activity,
+      activityExcludesLifting: true,
       gainPctPerWeek: pace,
       geminiKey: '',
       geminiModel: 'gemini-flash-latest',

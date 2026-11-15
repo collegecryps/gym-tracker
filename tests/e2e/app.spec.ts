@@ -15,7 +15,8 @@ async function onboard(page: Page) {
   await page.getByRole('button', { name: 'Next' }).click()
   await page.getByPlaceholder('lb').fill('175')
   await page.getByRole('button', { name: 'Next' }).click()
-  await page.getByRole('button', { name: 'Next' }).click() // activity default
+  await page.getByRole('button', { name: 'On my feet most of the day' }).click()
+  await page.getByRole('button', { name: 'Next' }).click()
   await page.getByRole('button', { name: 'Build my plan' }).click()
   await expect(page.getByText('750 / 3150').or(page.getByText('0 / 3150'))).toBeVisible()
 }
@@ -161,6 +162,27 @@ test('food photo at the free daily limit says so', async ({ page }) => {
   await expect(page.getByText(/Free daily photo limit reached/)).toBeVisible()
 })
 
+test('food photo: busy model retries, then the backup model answers', async ({ page }) => {
+  const urls: string[] = []
+  await page.route('https://generativelanguage.googleapis.com/**', async (route) => {
+    const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': 'POST, OPTIONS' }
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors })
+    urls.push(route.request().url())
+    if (route.request().url().includes('gemini-flash-latest'))
+      return route.fulfill({ status: 503, headers: cors, json: { error: { message: 'This model is currently experiencing high demand.' } } })
+    const answer = { name: 'Chili', calories: 900, protein: 60, carbs: 70, fat: 40, notes: '1.5 lb chili' }
+    return route.fulfill({ headers: cors, json: { candidates: [{ content: { parts: [{ text: JSON.stringify(answer) }] } }] } })
+  })
+  await onboard(page)
+  await setKey(page)
+  await page.locator('.tabbar').getByText('Food').click()
+  await page.locator('input[type=file]').setInputFiles(PHOTO)
+  await page.getByRole('button', { name: 'Estimate from photo' }).click()
+  await expect(page.getByPlaceholder('e.g. Chicken burrito bowl')).toHaveValue('Chili', { timeout: 15000 })
+  expect(urls.filter((u) => u.includes('gemini-flash-latest'))).toHaveLength(3)
+  expect(urls.filter((u) => u.includes('gemini-flash-lite-latest'))).toHaveLength(1)
+})
+
 test('log sets and see weekly volume', async ({ page }) => {
   await onboard(page)
   await page.locator('.tabbar').getByText('Lift').click()
@@ -181,7 +203,7 @@ test('log sets and see weekly volume', async ({ page }) => {
   const row = (m: string) => page.locator('.vol-row', { hasText: m })
   await expect(row('Chest').locator('.vol-num')).toHaveText('2') // deleted 1 hard, 1 easy not counted
   await expect(row('Triceps').locator('.vol-num')).toHaveText('1')
-  await expect(row('Chest').locator('.vol-freq')).toHaveText('1d')
+  await expect(row('Chest')).toContainText('1 day, aim for 2')
   await expect(page.locator('.list-item', { hasText: 'Bench Press' })).toContainText('3 sets')
 })
 
@@ -534,7 +556,7 @@ test('restore rejects a file that is not a backup', async ({ page }) => {
 test('science sources are listed with links', async ({ page }) => {
   await onboard(page)
   await page.locator('.tabbar').getByText('More').click()
-  await expect(page.locator('details')).toHaveCount(10)
+  await expect(page.locator('details')).toHaveCount(11)
   await page.getByText('10–20 hard sets per muscle per week').click()
   await expect(page.getByRole('link', { name: /Schoenfeld, Ogborn & Krieger \(2017\)/ })).toBeVisible()
 })
@@ -543,4 +565,20 @@ test('installable on the home screen', async ({ page }) => {
   await page.goto('/')
   await expect(page.locator('link[rel=apple-touch-icon]')).toHaveAttribute('href', '/icon-180.png')
   await expect(page.locator('meta[name=apple-mobile-web-app-capable]')).toHaveAttribute('content', 'yes')
+})
+
+test('start lift: timer runs, finish adds the burn to the food target', async ({ page }) => {
+  await page.clock.install()
+  await onboard(page)
+  await page.locator('.tabbar').getByText('Lift').click()
+  await page.getByRole('button', { name: '▶ Start lift' }).click()
+  await page.clock.fastForward('10:00')
+  await expect(page.locator('.session-clock')).toHaveText(/^10:0\d$/)
+  await page.getByRole('button', { name: 'Finish lift' }).click()
+  await expect(page.getByRole('button', { name: 'Keep lifting' })).toBeVisible()
+  // 10 min × (3.5 − 1) METs × 79.4 kg ≈ 33 cal
+  await expect(page.locator('.session')).toContainText('~33 cal burned')
+  await page.locator('.tabbar').getByText('Food').click()
+  await expect(page.getByText('Includes +33 cal for 10 min of lifting.')).toBeVisible()
+  await expect(page.locator('.big-number strong')).toHaveText('3183')
 })

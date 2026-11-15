@@ -1,16 +1,20 @@
 import { useLiveQuery } from 'dexie-react-hooks'
-import { db, daysAgoStr, type Profile } from './db'
+import { db, daysAgoStr, todayStr, type Profile } from './db'
 import { computeTargets, type Targets } from './plan'
 
-export function useTargets(profile: Profile): Targets | undefined {
+/** Targets for one day; lifting logged that day raises its calories. */
+export function useTargets(profile: Profile, date = todayStr()): Targets | undefined {
   return useLiveQuery(async () => {
     const since = daysAgoStr(30)
-    const [weighIns, foods] = await Promise.all([
+    const from = since < date ? since : date
+    const [weighIns, foods, sets, sessions] = await Promise.all([
       db.weighIns.where('date').aboveOrEqual(since).toArray(),
       db.foods.where('date').aboveOrEqual(since).toArray(),
+      db.sets.where('date').aboveOrEqual(from).toArray(),
+      db.sessions.where('date').aboveOrEqual(from).toArray(),
     ])
-    return computeTargets(profile, weighIns, foods)
-  }, [profile])
+    return computeTargets(profile, weighIns, foods, sets, date, sessions)
+  }, [profile, date])
 }
 
 export function prettyDate(date: string): string {
