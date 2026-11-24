@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { guessCategory } from './foodCategories'
 import { daysAgoStr, type Food, type LiftSet, type Profile, type WeighIn } from './db'
 import {
   DEFAULT_EXERCISES,
@@ -343,4 +344,17 @@ describe('guessMuscle', () => {
     ['Decline Press', 'Chest'],
     ['Something Weird', 'Chest'],
   ])('%s → %s', (name, muscle) => expect(guessMuscle(name)).toBe(muscle))
+})
+
+describe('guessCategory', () => {
+  it.each([
+    ['Protein shake', 'Shakes & Drinks'],
+    ['Chipotle chicken bowl', 'Meals'],
+    ['Grilled chicken breast', 'Meat & Fish'],
+    ['Greek yogurt', 'Eggs & Dairy'],
+    ['Oatmeal', 'Grains & Carbs'],
+    ['Banana', 'Fruit & Veggies'],
+    ['Quest bar', 'Snacks & Sweets'],
+    ['Mystery', 'Other'],
+  ])('%s → %s', (name, cat) => expect(guessCategory(name)).toBe(cat))
 })

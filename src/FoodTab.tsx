@@ -7,6 +7,8 @@ import type { Targets } from './plan'
 import { plural, prettyDate, shiftDate, useTargets } from './helpers'
 import { Bar, Photo, Modal, PhotoButton } from './ui'
 import { RecipeSheet } from './Recipes'
+import { SavedFoodsSheet } from './SavedFoodsSheet'
+import { FOOD_CATEGORIES, guessCategory, rememberFood } from './savedFoods'
 
 type Draft = Omit<Food, 'id' | 'calories' | 'protein' | 'carbs' | 'fat'> & {
   id?: number
@@ -25,6 +27,7 @@ export function FoodTab({ profile }: { profile: Profile }) {
   const [draft, setDraft] = useState<Draft | null>(null)
   const [showHistory, setShowHistory] = useState(false)
   const [showRecipes, setShowRecipes] = useState(false)
+  const [showSaved, setShowSaved] = useState(false)
   const targets = useTargets(profile, date)
   const foods = useLiveQuery(() => db.foods.where('date').equals(date).sortBy('time'), [date])
 
@@ -78,11 +81,16 @@ export function FoodTab({ profile }: { profile: Profile }) {
           + Enter manually
         </button>
       </div>
-      {targets && (
-        <button className="btn ghost" onClick={() => setShowRecipes(true)}>
-          🍳 Recipes to hit my macros
+      <div className="row">
+        <button className="btn ghost" onClick={() => setShowSaved(true)}>
+          ⭐ Saved foods
         </button>
-      )}
+        {targets && (
+          <button className="btn ghost" onClick={() => setShowRecipes(true)}>
+            🍳 Recipes to hit my macros
+          </button>
+        )}
+      </div>
 
       <div className="list">
         {foods?.length === 0 && <p className="muted center">Nothing logged yet.</p>}
@@ -110,6 +118,23 @@ export function FoodTab({ profile }: { profile: Profile }) {
           }}
         />
       )}
+      {showSaved && (
+        <SavedFoodsSheet
+          onClose={() => setShowSaved(false)}
+          onPick={(f) => {
+            setShowSaved(false)
+            setDraft({
+              ...blank(),
+              name: f.name,
+              calories: String(f.calories),
+              protein: String(f.protein),
+              carbs: String(f.carbs),
+              fat: String(f.fat),
+              category: f.category,
+            })
+          }}
+        />
+      )}
       {showRecipes && targets && (
         <RecipeSheet
           profile={profile}
@@ -131,6 +156,7 @@ export function FoodTab({ profile }: { profile: Profile }) {
               carbs: String(Math.round(r.carbs)),
               fat: String(Math.round(r.fat)),
               aiEstimated: true,
+              category: 'Meals',
             })
           }}
         />
@@ -147,12 +173,8 @@ function FoodEditor({ profile, draft: initial, onClose }: { profile: Profile; dr
   const [err, setErr] = useState('')
   const [notes, setNotes] = useState('')
 
-  const recent = useLiveQuery(async () => {
-    if (initial.id) return []
-    const all = await db.foods.orderBy('id').reverse().limit(200).toArray()
-    const seen = new Set<string>()
-    return all.filter((f) => f.name && !seen.has(f.name.toLowerCase()) && seen.add(f.name.toLowerCase())).slice(0, 8)
-  })
+  const recent = useLiveQuery(async () => (initial.id ? [] : db.savedFoods.orderBy('lastUsed').reverse().limit(8).toArray()))
+  const category = d.category ?? guessCategory(d.name)
 
   const set = (k: keyof Draft) => (e: React.ChangeEvent<HTMLInputElement>) => setD({ ...d, [k]: e.target.value })
 
@@ -160,7 +182,7 @@ function FoodEditor({ profile, draft: initial, onClose }: { profile: Profile; dr
     setBusy(true)
     setErr('')
     try {
-      const g = await analyzeFood(profile.geminiKey, profile.geminiModel, photo, hint.trim())
+      const g = await analyzeFood(profile.geminiKey, profile.geminiModel, photo, hint.trim(), FOOD_CATEGORIES)
       setD((cur) => ({
         ...cur,
         name: g.name,
@@ -169,6 +191,7 @@ function FoodEditor({ profile, draft: initial, onClose }: { profile: Profile; dr
         carbs: String(Math.round(g.carbs)),
         fat: String(Math.round(g.fat)),
         aiEstimated: true,
+        category: g.category,
       }))
       setNotes(g.notes)
     } catch (e) {
@@ -186,8 +209,10 @@ function FoodEditor({ profile, draft: initial, onClose }: { profile: Profile; dr
       protein: Math.round(+d.protein || 0),
       carbs: Math.round(+d.carbs || 0),
       fat: Math.round(+d.fat || 0),
+      category,
     }
     await db.foods.put(food)
+    await rememberFood(food)
     onClose()
   }
 
@@ -222,7 +247,9 @@ function FoodEditor({ profile, draft: initial, onClose }: { profile: Profile; dr
             <button
               key={f.id}
               className="chip"
-              onClick={() => setD({ ...d, name: f.name, calories: String(f.calories), protein: String(f.protein), carbs: String(f.carbs), fat: String(f.fat) })}
+              onClick={() =>
+                setD({ ...d, name: f.name, calories: String(f.calories), protein: String(f.protein), carbs: String(f.carbs), fat: String(f.fat), category: f.category })
+              }
             >
               {f.name}
             </button>
@@ -252,7 +279,15 @@ function FoodEditor({ profile, draft: initial, onClose }: { profile: Profile; dr
           <input inputMode="numeric" value={d.fat} onChange={set('fat')} />
         </label>
       </div>
-      <p className="muted small">Photo estimates can be off. Change any number before saving.</p>
+      <label>
+        Type of food
+        <select value={category} onChange={(e) => setD({ ...d, category: e.target.value })}>
+          {FOOD_CATEGORIES.map((c) => (
+            <option key={c}>{c}</option>
+          ))}
+        </select>
+      </label>
+      <p className="muted small">Photo estimates can be off. Change any number before saving. Saved foods keep your latest numbers.</p>
       <div className="row">
         {initial.id !== undefined && (
           <button className="btn danger" onClick={remove}>

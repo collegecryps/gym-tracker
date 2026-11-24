@@ -1,4 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie'
+import { MAX_SAVED, toSaved } from './foodCategories'
 
 // All data lives on this phone only (IndexedDB). Each person's phone = their own data.
 
@@ -38,6 +39,19 @@ export interface Food {
   fat: number
   photo?: string // JPEG data URL (Safari can't reliably store Blobs in IndexedDB)
   aiEstimated: boolean
+  category?: string // one of FOOD_CATEGORIES (src/savedFoods.ts)
+}
+
+/** A food the user has eaten, kept for one-tap logging even if the log entry is deleted. */
+export interface SavedFood {
+  id: string // lowercase name
+  name: string
+  calories: number
+  protein: number
+  carbs: number
+  fat: number
+  category: string
+  lastUsed: number // epoch ms
 }
 
 export interface WeighIn {
@@ -93,6 +107,7 @@ export const db = new Dexie('gym-tracker') as Dexie & {
   templates: EntityTable<DayTemplate, 'id'>
   dayPlans: EntityTable<DayPlan, 'date'>
   sessions: EntityTable<LiftSession, 'id'>
+  savedFoods: EntityTable<SavedFood, 'id'>
 }
 
 db.version(1).stores({
@@ -111,6 +126,19 @@ db.version(2).stores({
 db.version(3).stores({
   sessions: '++id, date',
 })
+
+// Saved foods start out as the 40 most recently logged distinct foods.
+db.version(4)
+  .stores({ savedFoods: 'id, lastUsed' })
+  .upgrade(async (tx) => {
+    const foods = await tx.table<Food>('foods').toArray()
+    const seen = new Map<string, SavedFood>()
+    for (const f of foods.sort((a, b) => b.time - a.time)) {
+      const s = toSaved(f, f.time)
+      if (s.id && s.name !== 'Food' && !seen.has(s.id)) seen.set(s.id, s)
+    }
+    await tx.table('savedFoods').bulkPut([...seen.values()].slice(0, MAX_SAVED))
+  })
 
 export function todayStr(d = new Date()): string {
   const y = d.getFullYear()
@@ -144,6 +172,7 @@ export async function exportBackup(): Promise<Blob> {
     templates: await db.templates.toArray(),
     dayPlans: await db.dayPlans.toArray(),
     sessions: await db.sessions.toArray(),
+    savedFoods: await db.savedFoods.toArray(),
   }
   return new Blob([JSON.stringify(data)], { type: 'application/json' })
 }
@@ -151,7 +180,7 @@ export async function exportBackup(): Promise<Blob> {
 export async function importBackup(file: File): Promise<void> {
   const data = JSON.parse(await file.text())
   if (data?.version !== 1) throw new Error('Not a backup file from this app')
-  const tables = [db.profile, db.foods, db.weighIns, db.sets, db.exercises, db.templates, db.dayPlans, db.sessions]
+  const tables = [db.profile, db.foods, db.weighIns, db.sets, db.exercises, db.templates, db.dayPlans, db.sessions, db.savedFoods]
   await db.transaction('rw', tables, async () => {
     await Promise.all(tables.map((t) => t.clear()))
     if (data.profile) await db.profile.put(data.profile)
@@ -162,5 +191,6 @@ export async function importBackup(file: File): Promise<void> {
     await db.templates.bulkPut(data.templates ?? [])
     await db.dayPlans.bulkPut(data.dayPlans ?? [])
     await db.sessions.bulkPut(data.sessions ?? [])
+    await db.savedFoods.bulkPut(data.savedFoods ?? [])
   })
 }

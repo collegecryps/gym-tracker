@@ -42,6 +42,11 @@ React + TypeScript + Vite, `vite-plugin-pwa`, Dexie (IndexedDB).
   for future use; the main muscle is guessed from the name (`guessMuscle`).
 - Recipes (Food → 🍳): Gemini text call for meals that fill what's left of the day; the last set
   is cached per day in localStorage so reopening doesn't use free quota.
+- **Saved foods (2026-11-23):** every logged food is upserted into `db.savedFoods` (keyed by
+  lowercase name, newest numbers win), capped at 40 by least-recently used. Deleting a log entry
+  does not remove it. Grouped by `FOOD_CATEGORIES` (`src/foodCategories.ts`): Gemini picks the
+  category for photos, otherwise a keyword guess; editable in the food editor. DB version 4
+  backfills it from the existing log.
 
 ## Gotchas
 
@@ -50,6 +55,8 @@ React + TypeScript + Vite, `vite-plugin-pwa`, Dexie (IndexedDB).
 - Gemini's free models often return 503 "high demand". `src/ai.ts` retries, then falls back to
   the `gemini-flash-lite-latest` alias. Use `-latest` aliases, not version numbers; free model
   names change often.
+- macOS file names are case-insensitive: `savedFoods.ts` and `SavedFoods.tsx` collide. The sheet
+  is `SavedFoodsSheet.tsx`.
 
 ## Files
 

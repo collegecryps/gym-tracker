@@ -77,13 +77,13 @@ test('add, edit and delete food by hand', async ({ page }) => {
   await n.nth(1).fill('55')
   await n.nth(2).fill('80')
   await n.nth(3).fill('18')
-  await page.getByRole('button', { name: 'Save' }).click()
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
   await expect(page.locator('.big-number')).toHaveText(/^2400\s*calories left$/)
 
   // Edit
   await page.getByText('Chicken rice bowl').click()
   await n.nth(0).fill('900')
-  await page.getByRole('button', { name: 'Save' }).click()
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
   await expect(page.locator('.big-number')).toHaveText(/^2250\s*calories left$/)
 
   // Recent foods appear as one-tap shortcuts
@@ -102,7 +102,7 @@ test('going over calories shows "over"', async ({ page }) => {
   await onboard(page)
   await page.getByRole('button', { name: '+ Enter manually' }).click()
   await page.locator('.grid4 input').nth(0).fill('3400')
-  await page.getByRole('button', { name: 'Save' }).click()
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
   await expect(page.getByText('250')).toBeVisible()
   await expect(page.getByText('calories over')).toBeVisible()
 })
@@ -115,6 +115,7 @@ test('food photo: estimate, then change the numbers before saving', async ({ pag
     carbs: 55,
     fat: 38,
     notes: '8 oz sirloin, 1 medium potato',
+    category: 'Meals',
   })
   await onboard(page)
   await setKey(page)
@@ -136,10 +137,11 @@ test('food photo: estimate, then change the numbers before saving', async ({ pag
   expect(parts[0].inline_data.mime_type).toBe('image/jpeg')
   expect(parts[0].inline_data.data.length).toBeGreaterThan(1000)
   expect(parts[1].text).toContain('8 oz steak')
+  await expect(page.getByLabel('Type of food')).toHaveValue('Meals')
 
   // User overrides the AI
   await n.nth(0).fill('700')
-  await page.getByRole('button', { name: 'Save' }).click()
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
   await expect(page.locator('.list-item', { hasText: 'Steak and potatoes' })).toContainText('700')
   await expect(page.locator('.list-item', { hasText: 'Steak and potatoes' })).toContainText('photo estimate')
   await expect(page.locator('.list-item img.thumb')).toBeVisible()
@@ -417,7 +419,7 @@ test('custom day: pick muscles and set counts', async ({ page }) => {
   await page.locator('.modal .chip', { hasText: 'Shoulders' }).click()
   await page.locator('.modal .chip', { hasText: 'Biceps' }).click()
   await page.getByRole('button', { name: 'Biceps more sets' }).click()
-  await page.getByRole('button', { name: 'Save' }).click()
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
   const plan = page.locator('.plan')
   await expect(plan.locator('h3')).toHaveText('Custom day')
   await expect(plan.locator('.plan-muscle-head')).toHaveCount(2)
@@ -433,11 +435,11 @@ test('customize push day: drop a muscle', async ({ page }) => {
   await page.getByRole('button', { name: 'Push', exact: true }).click()
   await page.getByRole('button', { name: 'Customize' }).click()
   await page.locator('.modal .chip', { hasText: 'Triceps' }).click()
-  await page.getByRole('button', { name: 'Save' }).click()
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
   await expect(page.locator('.plan .plan-muscle-head')).toHaveCount(2)
   await page.getByRole('button', { name: 'Customize' }).click()
   await page.getByRole('button', { name: 'Reset' }).click()
-  await page.getByRole('button', { name: 'Save' }).click()
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
   await expect(page.locator('.plan .plan-muscle-head')).toHaveCount(3)
 })
 
@@ -509,7 +511,7 @@ test('weigh in and update today', async ({ page }) => {
   await onboard(page)
   await page.locator('.tabbar').getByText('Weight').click()
   await page.locator('.big-input').fill('176.2')
-  await page.getByRole('button', { name: 'Save' }).click()
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
   await expect(page.locator('.list-item', { hasText: '176.2' })).toBeVisible()
   await page.locator('.big-input').fill('176.8')
   await page.getByRole('button', { name: 'Update' }).click()
@@ -533,7 +535,7 @@ test('backup and restore round-trip', async ({ page }) => {
   await page.getByRole('button', { name: '+ Enter manually' }).click()
   await page.getByPlaceholder('e.g. Chicken burrito bowl').fill('Oats')
   await page.locator('.grid4 input').nth(0).fill('400')
-  await page.getByRole('button', { name: 'Save' }).click()
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
 
   await page.locator('.tabbar').getByText('More').click()
   // Force the download path (desktop browsers can't share files)
@@ -665,11 +667,124 @@ test('recipes fill the rest of the day and can be logged', async ({ page }) => {
 
   await page.locator('.recipe', { hasText: 'Chicken rice bowl' }).getByRole('button', { name: 'Log this meal' }).click()
   await expect(page.locator('.modal h2')).toHaveText('Add food')
-  await page.getByRole('button', { name: 'Save' }).click()
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
   await expect(page.locator('.big-number')).toHaveText(/^2050\s*calories left$/)
 
   // Reopening shows the same ideas without asking Gemini again
   await page.getByRole('button', { name: '🍳 Recipes to hit my macros' }).click()
   await expect(page.locator('.recipe')).toHaveCount(2)
   expect(seen).toHaveLength(1)
+})
+
+test('logged foods are saved by type and survive deleting the entry', async ({ page }) => {
+  await onboard(page)
+  async function log(name: string, cal: string) {
+    await page.getByRole('button', { name: '+ Enter manually' }).click()
+    await page.getByPlaceholder('e.g. Chicken burrito bowl').fill(name)
+    await page.locator('.grid4 input').nth(0).fill(cal)
+    await page.locator('.grid4 input').nth(1).fill('40')
+    await page.getByRole('button', { name: 'Save', exact: true }).click()
+  }
+  await log('Grilled chicken breast', '300')
+  await log('Greek yogurt', '150')
+  await log('Protein shake', '200')
+
+  // Delete one entry from the log: it stays saved
+  await page.locator('.list-item', { hasText: 'Greek yogurt' }).click()
+  page.once('dialog', (d) => d.accept())
+  await page.getByRole('button', { name: 'Delete' }).click()
+  await expect(page.locator('.list-item', { hasText: 'Greek yogurt' })).toHaveCount(0)
+
+  await page.getByRole('button', { name: '⭐ Saved foods' }).click()
+  const sheet = page.locator('.modal')
+  await expect(sheet.locator('.list', { hasText: 'Meat & Fish' })).toContainText('Grilled chicken breast')
+  await expect(sheet.locator('.list', { hasText: 'Eggs & Dairy' })).toContainText('Greek yogurt')
+  await expect(sheet.locator('.list', { hasText: 'Shakes & Drinks' })).toContainText('Protein shake')
+
+  // Tap to log it again
+  await sheet.getByRole('button', { name: /Greek yogurt/ }).click()
+  await expect(page.getByPlaceholder('e.g. Chicken burrito bowl')).toHaveValue('Greek yogurt')
+  await expect(page.locator('.grid4 input').nth(0)).toHaveValue('150')
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(page.locator('.list-item', { hasText: 'Greek yogurt' })).toBeVisible()
+})
+
+test('saved foods keep only the latest 40', async ({ page }) => {
+  await onboard(page)
+  // Seed 40 old saved foods straight into the database
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve, reject) => {
+        const open = indexedDB.open('gym-tracker')
+        open.onsuccess = () => {
+          const tx = open.result.transaction('savedFoods', 'readwrite')
+          for (let i = 0; i < 40; i++)
+            tx.objectStore('savedFoods').put({ id: `old ${i}`, name: `Old ${i}`, calories: 100, protein: 1, carbs: 1, fat: 1, category: 'Other', lastUsed: i + 1 })
+          tx.oncomplete = () => resolve()
+          tx.onerror = () => reject(tx.error)
+        }
+      }),
+  )
+  await page.getByRole('button', { name: '+ Enter manually' }).click()
+  await page.getByPlaceholder('e.g. Chicken burrito bowl').fill('Banana')
+  await page.locator('.grid4 input').nth(0).fill('105')
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
+  await page.getByRole('button', { name: '⭐ Saved foods' }).click()
+  await expect(page.getByText('40 of 40 saved')).toBeVisible()
+  await expect(page.locator('.modal').getByText('Banana')).toBeVisible()
+  await expect(page.locator('.modal').getByText('Old 0', { exact: true })).toHaveCount(0)
+  await expect(page.locator('.modal').getByText('Old 1', { exact: true })).toBeVisible()
+
+  // Remove one by hand
+  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByRole('button', { name: 'Remove Banana' }).click()
+  await expect(page.getByText('39 of 40 saved')).toBeVisible()
+})
+
+test('upgrading fills saved foods from the existing food log', async ({ page }) => {
+  // Build the previous database (Dexie version 3 = IndexedDB version 30) with some logged food
+  await page.goto('/404-blank')
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve, reject) => {
+        const req = indexedDB.open('gym-tracker', 30)
+        req.onupgradeneeded = () => {
+          const d = req.result
+          d.createObjectStore('profile', { keyPath: 'id' })
+          d.createObjectStore('foods', { keyPath: 'id', autoIncrement: true }).createIndex('date', 'date')
+          d.createObjectStore('weighIns', { keyPath: 'id', autoIncrement: true }).createIndex('date', 'date', { unique: true })
+          const sets = d.createObjectStore('sets', { keyPath: 'id', autoIncrement: true })
+          sets.createIndex('date', 'date')
+          sets.createIndex('exercise', 'exercise')
+          d.createObjectStore('exercises', { keyPath: 'name' })
+          d.createObjectStore('templates', { keyPath: 'id' })
+          d.createObjectStore('dayPlans', { keyPath: 'date' })
+          d.createObjectStore('sessions', { keyPath: 'id', autoIncrement: true }).createIndex('date', 'date')
+        }
+        req.onsuccess = () => {
+          const tx = req.result.transaction(['profile', 'foods'], 'readwrite')
+          tx.objectStore('profile').put({
+            id: 1, name: 'Old', sex: 'male', age: 24, heightIn: 72, startWeightLb: 175, activity: 1.55,
+            activityExcludesLifting: true, gainPctPerWeek: 0.25, geminiKey: '', geminiModel: 'x',
+          })
+          const foods = tx.objectStore('foods')
+          const day = new Date().toISOString().slice(0, 10)
+          foods.add({ date: day, time: 1, name: 'Turkey sandwich', calories: 450, protein: 35, carbs: 40, fat: 12, aiEstimated: false })
+          foods.add({ date: day, time: 2, name: 'turkey sandwich', calories: 500, protein: 36, carbs: 45, fat: 14, aiEstimated: false })
+          foods.add({ date: day, time: 3, name: 'Apple', calories: 95, protein: 0, carbs: 25, fat: 0, aiEstimated: false })
+          tx.oncomplete = () => {
+            req.result.close()
+            resolve()
+          }
+          tx.onerror = () => reject(tx.error)
+        }
+      }),
+  )
+  await page.goto('/')
+  await page.getByRole('button', { name: '⭐ Saved foods' }).click()
+  const sheet = page.locator('.modal')
+  await expect(sheet.locator('.list', { hasText: 'Meals' })).toContainText('turkey sandwich')
+  await expect(sheet.locator('.list', { hasText: 'Meals' })).toContainText('500') // newest numbers win
+  await expect(sheet.locator('.list', { hasText: 'Fruit & Veggies' })).toContainText('Apple')
+  await expect(page.getByText('2 of 40 saved')).toBeVisible()
 })

@@ -8,6 +8,7 @@ export interface FoodGuess {
   carbs: number
   fat: number
   notes: string
+  category: string
 }
 
 export interface EquipmentGuess {
@@ -90,7 +91,7 @@ async function ask<T>(key: string, model: string, image: string | null, prompt: 
   throw last ?? new Error('Photo recognition failed')
 }
 
-export function analyzeFood(key: string, model: string, image: string, hint: string): Promise<FoodGuess> {
+export function analyzeFood(key: string, model: string, image: string, hint: string, categories: readonly string[]): Promise<FoodGuess> {
   return ask<FoodGuess>(
     key,
     model,
@@ -99,7 +100,8 @@ export function analyzeFood(key: string, model: string, image: string, hint: str
 Judge portion size from plate, utensils, hands and packaging. If a nutrition label is visible, use it.
 ${hint ? `The user says: "${hint}". Trust this over what you see.` : ''}
 Give a short name, total calories (kcal) and grams of protein, carbs and fat for everything shown.
-In notes, list the items and portion sizes you assumed, in one sentence.`,
+In notes, list the items and portion sizes you assumed, in one sentence.
+For category, pick the best fit from: ${categories.join(', ')}. A mixed plate or restaurant dish is "Meals".`,
     {
       type: 'OBJECT',
       properties: {
@@ -109,8 +111,9 @@ In notes, list the items and portion sizes you assumed, in one sentence.`,
         carbs: { type: 'NUMBER' },
         fat: { type: 'NUMBER' },
         notes: { type: 'STRING' },
+        category: { type: 'STRING', enum: [...categories] },
       },
-      required: ['name', 'calories', 'protein', 'carbs', 'fat', 'notes'],
+      required: ['name', 'calories', 'protein', 'carbs', 'fat', 'notes', 'category'],
     },
   )
 }
