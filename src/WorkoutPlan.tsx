@@ -186,7 +186,19 @@ function SwapSheet({
   history: LiftSet[]
   onClose: () => void
 }) {
-  const options = rankExercises(item.muscle, library, history).filter((e) => !shown.includes(e.name))
+  const [q, setQ] = useState('')
+  const options = rankExercises(item.muscle, library, history)
+    .filter((e) => !shown.includes(e.name))
+    .filter((e) => e.name.toLowerCase().includes(q.trim().toLowerCase()))
+  const typed = q.trim()
+  const known = library.find((e) => e.name.toLowerCase() === typed.toLowerCase())
+
+  /** Save a lift that isn't in the list yet, so it shows up everywhere from now on. */
+  async function addNew() {
+    if (!typed) return
+    if (!known) await db.exercises.put({ name: typed, muscle: item.muscle })
+    await choose(known?.name ?? typed)
+  }
 
   async function choose(name: string) {
     const pinned = shown.map((n) => (n === item.exercise.name ? name : n))
@@ -197,6 +209,17 @@ function SwapSheet({
   return (
     <Modal title={`Swap ${item.exercise.name}`} onClose={onClose}>
       <p className="muted small">The app will remember this choice for your {DAY_NAMES[template.id]} days.</p>
+      <input
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && addNew()}
+        placeholder="Search or type a new one"
+      />
+      {typed && !options.some((e) => e.name.toLowerCase() === typed.toLowerCase()) && (
+        <button className="btn" onClick={addNew}>
+          {known ? `Use “${known.name}”` : `Add “${typed}” (${item.muscle}) and use it`}
+        </button>
+      )}
       <div className="list">
         {options.map((e) => (
           <button key={e.name} className="list-item" onClick={() => choose(e.name)}>

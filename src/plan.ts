@@ -1,6 +1,6 @@
 import { todayStr, type Food, type LiftSession, type LiftSet, type Profile, type WeighIn } from './db'
 
-// ---------- Nutrition targets (lean bulk) ----------
+// ---------- Nutrition targets (lean bulk or cut) ----------
 
 export interface Targets {
   calories: number
@@ -13,6 +13,8 @@ export interface Targets {
   targetRateLb: number // lb per week
   actualRateLb: number | null
   coaching: string
+  /** True when the user typed their own targets in More (fixed every day, no lifting add-on). */
+  custom: boolean
   /** Calories for a rest day. On lifting days `calories` = this + liftCalories. */
   baseCalories: number
   lift: LiftEstimate
@@ -190,39 +192,49 @@ export function computeTargets(
     }
   }
 
-  const baseCalories = Math.round((tdee + (targetRateLb * 3500) / 7) / 10) * 10
   const lift = liftBurn(date)
-  const calories = baseCalories + lift.calories
+  const custom = p.customTargets
+  const baseCalories = custom ? custom.calories : Math.round((tdee + (targetRateLb * 3500) / 7) / 10) * 10
+  // Custom targets are a flat daily number, so lifting isn't added on top.
+  const calories = custom ? custom.calories : baseCalories + lift.calories
   // Protein and fat are set by bodyweight, so lifting calories go to carbs.
-  const protein = Math.round(weight * 1.0)
-  const fat = Math.round(weight * 0.35)
-  const carbs = Math.max(0, Math.round((calories - protein * 4 - fat * 9) / 4))
-
-  let coaching: string
-  if (actualRateLb === null) {
-    coaching = 'Weigh in most mornings. After about 2 weeks the app can tell if your calories are right.'
-  } else if (actualRateLb > targetRateLb * 1.5 + 0.15) {
-    coaching = `You're gaining ${actualRateLb.toFixed(2)} lb/wk, faster than the ${targetRateLb.toFixed(2)} target. More of it will be fat. Eat a bit less.`
-  } else if (actualRateLb < targetRateLb * 0.5) {
-    coaching = `You're gaining ${actualRateLb.toFixed(2)} lb/wk, slower than the ${targetRateLb.toFixed(2)} target. Eat a bit more.`
-  } else {
-    coaching = `On pace: ${actualRateLb.toFixed(2)} lb/wk against a ${targetRateLb.toFixed(2)} target. Keep going.`
-  }
+  const protein = custom ? custom.protein : Math.round(weight * 1.0)
+  const fat = custom ? custom.fat : Math.round(weight * 0.35)
+  const carbs = custom ? custom.carbs : Math.max(0, Math.round((calories - protein * 4 - fat * 9) / 4))
 
   return {
     calories,
     protein,
     carbs,
     fat,
+    custom: !!custom,
     tdee: Math.round(tdee),
     tdeeSource,
     currentWeight: weight,
     targetRateLb,
     actualRateLb,
-    coaching,
+    coaching: coachingText(actualRateLb, targetRateLb, !!custom),
     baseCalories,
     lift,
   }
+}
+
+/** How the weight trend compares with the goal, in either direction. */
+export function coachingText(actual: number | null, target: number, custom: boolean): string {
+  if (actual === null) return 'Weigh in most mornings. After about 2 weeks the app can tell if your calories are right.'
+  const lb = (n: number) => Math.abs(n).toFixed(2)
+  const change = custom ? ' Change your targets in More.' : ''
+  if (target < 0) {
+    const verb = actual <= 0 ? `losing ${lb(actual)}` : `gaining ${lb(actual)}`
+    if (-actual > -target * 1.5 + 0.15)
+      return `You're ${verb} lb/wk, faster than the ${lb(target)} target. Losing too fast costs muscle. Eat a bit more.${change}`
+    if (-actual < -target * 0.5) return `You're ${verb} lb/wk, slower than the ${lb(target)} lb/wk loss target. Eat a bit less.${change}`
+    return `On pace: losing ${lb(actual)} lb/wk against a ${lb(target)} target. Keep going.`
+  }
+  if (actual > target * 1.5 + 0.15)
+    return `You're gaining ${actual.toFixed(2)} lb/wk, faster than the ${target.toFixed(2)} target. More of it will be fat. Eat a bit less.${change}`
+  if (actual < target * 0.5) return `You're gaining ${actual.toFixed(2)} lb/wk, slower than the ${target.toFixed(2)} target. Eat a bit more.${change}`
+  return `On pace: ${actual.toFixed(2)} lb/wk against a ${target.toFixed(2)} target. Keep going.`
 }
 
 // ---------- Lifting (evidence-based; see src/science.ts for sources) ----------
@@ -293,6 +305,28 @@ export const DEFAULT_EXERCISES: ExerciseDef[] = [
   { name: 'Hanging Leg Raise', muscle: 'Abs' },
   { name: 'Wrist Curl', muscle: 'Forearms' },
 ]
+
+// Keywords for guessing a new exercise's main muscle from its name. First match wins, so the more
+// specific phrases come first ("leg curl" before "curl"). The user can always change the guess.
+const MUSCLE_KEYWORDS: [RegExp, string][] = [
+  [/leg curl|hamstring|nordic|good ?morning|rdl|romanian|stiff/, 'Hamstrings'],
+  [/leg raise|knee raise|crunch|sit-?up|plank|ab |abs|core|oblique|rollout|v-?up/, 'Abs'],
+  [/calf|calves/, 'Calves'],
+  [/wrist|forearm|grip|farmer/, 'Forearms'],
+  [/hip thrust|glute|abduct/, 'Glutes'],
+  [/squat|leg press|leg extension|lunge|step-?up|quad|sissy/, 'Quads'],
+  [/tricep|pushdown|skull|kickback|close-?grip|dip/, 'Triceps'],
+  [/curl|bicep/, 'Biceps'],
+  [/lateral|delt|shoulder|overhead press|military|arnold|face pull|upright row|shrug/, 'Shoulders'],
+  [/row|pull-?up|chin-?up|pulldown|lat |lats|pullover|deadlift|back/, 'Back'],
+  [/bench|chest|fly|flye|pec|push-?up|press/, 'Chest'],
+]
+
+/** Best guess at the main muscle for an exercise name the app hasn't seen. */
+export function guessMuscle(name: string): string {
+  const n = ` ${name.toLowerCase()} `
+  return MUSCLE_KEYWORDS.find(([re]) => re.test(n))?.[1] ?? MUSCLES[0]
+}
 
 // Weekly hard sets per muscle. Growth keeps rising with volume but with diminishing returns
 // (Schoenfeld 2017; Pelland 2024). Under 10 is leaving gains on the table; past ~20 recovery

@@ -127,6 +127,21 @@ export const PRINCIPLES: Principle[] = [
     ],
   },
   {
+    rule: 'Cut at 0.25–0.75% of bodyweight per week',
+    detail:
+      'When losing fat, a slower rate keeps more muscle. Lifters losing about 0.7% a week kept or gained lean mass, while those losing 1.4% a week lost strength and some muscle. Reviews of natural lifters recommend 0.5–1% a week, at the slower end when you are already lean. Keep protein high and keep lifting hard.',
+    sources: [
+      {
+        cite: 'Garthe et al. (2011), Int J Sport Nutr Exerc Metab: slow vs. fast weight loss in athletes',
+        url: 'https://pubmed.ncbi.nlm.nih.gov/?term=Effect%20of%20two%20different%20weight-loss%20rates%20on%20body%20composition%20and%20strength%20and%20power-related%20performance%20in%20elite%20athletes%20Garthe',
+      },
+      {
+        cite: 'Helms, Aragon & Fitschen (2014), J Int Soc Sports Nutr: evidence-based recommendations for natural bodybuilding contest preparation',
+        url: 'https://pubmed.ncbi.nlm.nih.gov/?term=Evidence-based%20recommendations%20for%20natural%20bodybuilding%20contest%20preparation%3A%20nutrition%20and%20supplementation%20Helms',
+      },
+    ],
+  },
+  {
     rule: 'Calories learned from your own data',
     detail:
       'Formulas for maintenance calories can be off by hundreds of calories. After 2–3 weeks of logging food and weighing in, the app works out your real maintenance from what you ate and how your weight moved, then uses that instead of the formula.',

@@ -1,6 +1,6 @@
 # Gym Tracker
 
-Personal lean-bulk tracker (food, lifts, bodyweight) for the owner and one friend. Not public.
+Personal lifting tracker (food, lifts, bodyweight; bulk or cut) for the owner and one friend. Not public.
 Installed on iPhone as a home-screen web app (PWA), not an App Store app (decided).
 
 ## Run
@@ -35,6 +35,13 @@ React + TypeScript + Vite, `vite-plugin-pwa`, Dexie (IndexedDB).
   lifting day adds the workout's burn (Compendium METs × minutes × bodyweight, above resting) to
   that day's target, as carbs. Minutes come from Start lift / Finish (`sessions` table) or from
   set timestamps. Old profiles without `activityExcludesLifting` are mapped by `dailyActivity`.
+- **Own targets (2026-11-23):** More → "Use my own targets" stores `profile.customTargets`; they
+  replace the computed targets and stay flat every day (no lifting add-on). Goal can be a cut
+  (negative `gainPctPerWeek`, -0.25/-0.5/-0.75%); coaching handles both directions.
+- New exercise names typed in the exercise search or the ⇄ swap list are saved to `db.exercises`
+  for future use; the main muscle is guessed from the name (`guessMuscle`).
+- Recipes (Food → 🍳): Gemini text call for meals that fill what's left of the day; the last set
+  is cached per day in localStorage so reopening doesn't use free quota.
 
 ## Gotchas
 
@@ -49,5 +56,5 @@ React + TypeScript + Vite, `vite-plugin-pwa`, Dexie (IndexedDB).
 - `src/plan.ts` calorie/macro targets, adaptive maintenance, volume, progression, history helpers.
 - `src/program.ts` workout builder (Push/Pull/Legs/Custom templates → exercises + sets for today).
   Owner trains push/pull/legs with ascending pyramids on the first big lift.
-- `src/ai.ts` Gemini calls (food + equipment) and photo shrinking.
+- `src/ai.ts` Gemini calls (food, equipment, recipes) and photo shrinking. `src/Recipes.tsx` recipe sheet.
 - `src/db.ts` schema + backup.

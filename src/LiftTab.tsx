@@ -10,6 +10,7 @@ import {
   VOLUME_MIN,
   e1rm,
   dayLift,
+  guessMuscle,
   liftSession,
   type LiftEstimate,
   lastSession,
@@ -176,11 +177,14 @@ export function LiftTab({ profile }: { profile: Profile }) {
 
 function ExercisePicker({ list, onPick, onClose }: { list: ExerciseDef[]; onPick: (e: ExerciseDef) => void; onClose: () => void }) {
   const [q, setQ] = useState('')
-  const [muscle, setMuscle] = useState(MUSCLES[0] as string)
+  // null = use the guess from the typed name
+  const [picked, setPicked] = useState<string | null>(null)
+  const muscle = picked ?? guessMuscle(q)
   const matches = list.filter((e) => e.name.toLowerCase().includes(q.toLowerCase()))
   const exact = list.some((e) => e.name.toLowerCase() === q.trim().toLowerCase())
 
   async function addCustom() {
+    if (!q.trim()) return
     const e: ExerciseDef = { name: q.trim(), muscle }
     await db.exercises.put(e)
     onPick(e)
@@ -188,17 +192,23 @@ function ExercisePicker({ list, onPick, onClose }: { list: ExerciseDef[]; onPick
 
   return (
     <Modal title="Pick an exercise" onClose={onClose}>
-      <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search or type a new one" />
+      <input
+        autoFocus
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && !exact && addCustom()}
+        placeholder="Search or type a new one"
+      />
       {q.trim() && !exact && (
         <div className="card">
-          <p className="small">Add “{q.trim()}” as a new exercise. Main muscle:</p>
-          <select value={muscle} onChange={(e) => setMuscle(e.target.value)}>
+          <p className="small">“{q.trim()}” isn't on the list. Add it and it's saved for next time. Main muscle:</p>
+          <select value={muscle} onChange={(e) => setPicked(e.target.value)} aria-label="Main muscle">
             {MUSCLES.map((m) => (
               <option key={m}>{m}</option>
             ))}
           </select>
           <button className="btn" onClick={addCustom}>
-            Add
+            Add and log it
           </button>
         </div>
       )}

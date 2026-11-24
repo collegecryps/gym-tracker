@@ -392,6 +392,16 @@ test('plan a push day, log from the plan, swap an exercise', async ({ page }) =>
   await page.locator('.tabbar').getByText('Lift').click()
   await expect(page.locator('.plan-ex', { hasText: 'Skull Crusher' })).toBeVisible()
 
+  // Swap in a lift that isn't on the list: it's saved for next time
+  await page.getByRole('button', { name: 'Swap Skull Crusher' }).click()
+  await page.locator('.modal input').fill('JM Press')
+  await page.getByRole('button', { name: 'Add “JM Press” (Triceps) and use it' }).click()
+  await expect(page.locator('.plan-ex', { hasText: 'JM Press' })).toBeVisible()
+  await page.getByRole('button', { name: '+ Add exercise' }).click()
+  await page.locator('.modal input').fill('jm')
+  await expect(page.locator('.modal .list-item', { hasText: 'JM Press' })).toContainText('Triceps')
+  await page.getByRole('button', { name: 'Close' }).click()
+
   // Change day
   await page.getByRole('button', { name: 'Change day' }).click()
   await page.getByRole('button', { name: 'Legs', exact: true }).click()
@@ -437,7 +447,7 @@ test('add a custom exercise', async ({ page }) => {
   await page.getByRole('button', { name: '+ Add exercise' }).click()
   await page.locator('.modal input').fill('Pendulum Squat')
   await page.locator('.modal select').selectOption('Quads')
-  await page.getByRole('button', { name: 'Add', exact: true }).click()
+  await page.getByRole('button', { name: 'Add and log it' }).click()
   await expect(page.locator('.modal h2')).toHaveText('Pendulum Squat')
   await page.getByLabel('Weight lb', { exact: true }).fill('90')
   await page.getByLabel('Reps', { exact: true }).fill('10')
@@ -556,7 +566,7 @@ test('restore rejects a file that is not a backup', async ({ page }) => {
 test('science sources are listed with links', async ({ page }) => {
   await onboard(page)
   await page.locator('.tabbar').getByText('More').click()
-  await expect(page.locator('details')).toHaveCount(11)
+  await expect(page.locator('details')).toHaveCount(12)
   await page.getByText('10–20 hard sets per muscle per week').click()
   await expect(page.getByRole('link', { name: /Schoenfeld, Ogborn & Krieger \(2017\)/ })).toBeVisible()
 })
@@ -606,4 +616,60 @@ test('logging a set starts the lift timer; ended lift shows in history', async (
   await page.getByRole('button', { name: '📅 History' }).click()
   await expect(page.locator('.history-day').first()).toContainText('2 min · ~7 cal')
   await expect(page.locator('.history-ex', { hasText: 'Bench Press' })).toContainText('~7 cal')
+})
+
+test('own food targets replace the computed ones', async ({ page }) => {
+  await onboard(page)
+  await page.locator('.tabbar').getByText('More').click()
+  await page.getByLabel('Goal').selectOption('-0.25')
+  await page.getByLabel('Use my own targets').check()
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(page.getByText(/Fill in all four targets/)).toBeVisible()
+  await page.getByLabel('Calories').fill('2750')
+  await page.getByLabel('Protein g').fill('190')
+  await page.getByLabel('Carbs g').fill('317')
+  await page.getByLabel('Fat g').fill('80')
+  await expect(page.getByText(/add up to 2748 cal/)).toBeVisible()
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Saved ✓' })).toBeVisible()
+  await page.locator('.tabbar').getByText('Food').click()
+  await expect(page.locator('.big-number')).toHaveText(/^2750\s*calories left$/)
+  await expect(page.getByText('0 / 190g')).toBeVisible()
+  await expect(page.getByText('0 / 317g')).toBeVisible()
+  await expect(page.getByText('0 / 80g')).toBeVisible()
+  await page.reload()
+  await page.locator('.tabbar').getByText('More').click()
+  await expect(page.getByLabel('Calories')).toHaveValue('2750')
+})
+
+test('recipes fill the rest of the day and can be logged', async ({ page }) => {
+  const seen = await mockGemini(page, {
+    recipes: [
+      { name: 'Chicken rice bowl', meal: 'Lunch', minutes: 20, ingredients: ['8 oz chicken breast', '1.5 cups cooked rice'], steps: ['Cook chicken', 'Serve over rice'], calories: 1100, protein: 80, carbs: 130, fat: 20 },
+      { name: 'Greek yogurt oats', meal: 'Breakfast', minutes: 5, ingredients: ['1 cup oats', '1 cup Greek yogurt'], steps: ['Mix'], calories: 700, protein: 50, carbs: 90, fat: 12 },
+    ],
+  })
+  await onboard(page)
+  await setKey(page)
+  await page.locator('.tabbar').getByText('Food').click()
+  await page.getByRole('button', { name: '🍳 Recipes to hit my macros' }).click()
+  await expect(page.locator('.modal')).toContainText('Still to eat: 3150 cal')
+  await page.locator('.modal input').fill('no fish')
+  await page.getByRole('button', { name: 'Find recipes' }).click()
+  await expect(page.locator('.recipe')).toHaveCount(2)
+  await expect(page.getByText(/add up to 1800 cal and 130g protein/)).toBeVisible()
+  const prompt = seen[0].body.contents[0].parts[0].text as string
+  expect(prompt).toContain('3150 kcal, 175 g protein')
+  expect(prompt).toContain('no fish')
+  expect(seen[0].body.contents[0].parts).toHaveLength(1) // text only, no photo
+
+  await page.locator('.recipe', { hasText: 'Chicken rice bowl' }).getByRole('button', { name: 'Log this meal' }).click()
+  await expect(page.locator('.modal h2')).toHaveText('Add food')
+  await page.getByRole('button', { name: 'Save' }).click()
+  await expect(page.locator('.big-number')).toHaveText(/^2050\s*calories left$/)
+
+  // Reopening shows the same ideas without asking Gemini again
+  await page.getByRole('button', { name: '🍳 Recipes to hit my macros' }).click()
+  await expect(page.locator('.recipe')).toHaveCount(2)
+  expect(seen).toHaveLength(1)
 })

@@ -6,6 +6,7 @@ import { LineChart } from './LineChart'
 import type { Targets } from './plan'
 import { plural, prettyDate, shiftDate, useTargets } from './helpers'
 import { Bar, Photo, Modal, PhotoButton } from './ui'
+import { RecipeSheet } from './Recipes'
 
 type Draft = Omit<Food, 'id' | 'calories' | 'protein' | 'carbs' | 'fat'> & {
   id?: number
@@ -23,6 +24,7 @@ export function FoodTab({ profile }: { profile: Profile }) {
   const [date, setDate] = useState(todayStr())
   const [draft, setDraft] = useState<Draft | null>(null)
   const [showHistory, setShowHistory] = useState(false)
+  const [showRecipes, setShowRecipes] = useState(false)
   const targets = useTargets(profile, date)
   const foods = useLiveQuery(() => db.foods.where('date').equals(date).sortBy('time'), [date])
 
@@ -58,7 +60,7 @@ export function FoodTab({ profile }: { profile: Profile }) {
             <strong className={left < 0 ? 'warn' : ''}>{Math.abs(Math.round(left))}</strong>
             <span className="muted">{left >= 0 ? 'calories left' : 'calories over'}</span>
           </div>
-          {targets.lift.calories > 0 && (
+          {targets.lift.calories > 0 && !targets.custom && (
             <p className="muted small center">
               Includes +{targets.lift.calories} cal for {targets.lift.minutes} min of lifting.
             </p>
@@ -76,6 +78,11 @@ export function FoodTab({ profile }: { profile: Profile }) {
           + Enter manually
         </button>
       </div>
+      {targets && (
+        <button className="btn ghost" onClick={() => setShowRecipes(true)}>
+          🍳 Recipes to hit my macros
+        </button>
+      )}
 
       <div className="list">
         {foods?.length === 0 && <p className="muted center">Nothing logged yet.</p>}
@@ -100,6 +107,31 @@ export function FoodTab({ profile }: { profile: Profile }) {
           onPick={(d) => {
             setDate(d)
             setShowHistory(false)
+          }}
+        />
+      )}
+      {showRecipes && targets && (
+        <RecipeSheet
+          profile={profile}
+          date={date}
+          left={{
+            calories: targets.calories - totals.calories,
+            protein: targets.protein - totals.protein,
+            carbs: targets.carbs - totals.carbs,
+            fat: targets.fat - totals.fat,
+          }}
+          onClose={() => setShowRecipes(false)}
+          onLog={(r) => {
+            setShowRecipes(false)
+            setDraft({
+              ...blank(),
+              name: r.name,
+              calories: String(Math.round(r.calories)),
+              protein: String(Math.round(r.protein)),
+              carbs: String(Math.round(r.carbs)),
+              fat: String(Math.round(r.fat)),
+              aiEstimated: true,
+            })
           }}
         />
       )}

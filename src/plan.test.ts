@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { daysAgoStr, type Food, type LiftSet, type Profile, type WeighIn } from './db'
 import {
   DEFAULT_EXERCISES,
+  coachingText,
   computeTargets,
+  guessMuscle,
   dailyActivity,
   dayLift,
   liftSession,
@@ -305,4 +307,40 @@ describe('lifting-day calories', () => {
     expect(dailyActivity({ ...profile, activityExcludesLifting: undefined, activity: 1.725 })).toBe(1.55)
     expect(dailyActivity({ ...profile, activity: 1.2 })).toBe(1.2)
   })
+})
+
+describe('custom targets and cutting', () => {
+  it('uses the typed targets every day, with no lifting add-on', () => {
+    const p = { ...profile, gainPctPerWeek: -0.25, customTargets: { calories: 2750, protein: 190, carbs: 317, fat: 80 } }
+    const t = computeTargets(p, [], [], [set({ time: Date.now() - 30 * 60000 }), set({})])
+    expect([t.calories, t.protein, t.carbs, t.fat, t.custom]).toEqual([2750, 190, 317, 80, true])
+  })
+
+  it('sets a deficit for a cut goal', () => {
+    const bulk = computeTargets(profile, [], [])
+    const cut = computeTargets({ ...profile, gainPctPerWeek: -0.25 }, [], [])
+    expect(cut.targetRateLb).toBeLessThan(0)
+    expect(cut.calories).toBeLessThan(cut.tdee)
+    expect(cut.calories).toBeLessThan(bulk.calories)
+  })
+
+  it('coaches a cut in the right direction', () => {
+    expect(coachingText(-0.5, -0.47, false)).toMatch(/^On pace: losing 0.50/)
+    expect(coachingText(-1.5, -0.47, false)).toMatch(/faster .* Eat a bit more/)
+    expect(coachingText(0.1, -0.47, true)).toMatch(/gaining 0.10 .* Eat a bit less\. Change your targets in More\./)
+  })
+})
+
+describe('guessMuscle', () => {
+  it.each([
+    ['Lying Leg Raise', 'Abs'],
+    ['Pendulum Squat', 'Quads'],
+    ['Nordic Curl', 'Hamstrings'],
+    ['Cable Curl', 'Biceps'],
+    ['Tricep Kickback', 'Triceps'],
+    ['T-Bar Row', 'Back'],
+    ['Machine Lateral Raise', 'Shoulders'],
+    ['Decline Press', 'Chest'],
+    ['Something Weird', 'Chest'],
+  ])('%s → %s', (name, muscle) => expect(guessMuscle(name)).toBe(muscle))
 })

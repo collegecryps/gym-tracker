@@ -1,4 +1,4 @@
-// Photo recognition via Google's Gemini API (free tier). Each person pastes their own free key
+// Photo recognition and recipe ideas via Google's Gemini API (free tier). Each person pastes their own free key
 // in Settings; it is stored only on their phone.
 
 export interface FoodGuess {
@@ -47,13 +47,14 @@ async function callModel(key: string, model: string, body: string): Promise<stri
   return text
 }
 
-async function ask<T>(key: string, model: string, image: string, prompt: string, schema: object): Promise<T> {
-  const m = /^data:([^;]+);base64,(.+)$/.exec(image)
-  if (!m) throw new Error('Could not read photo')
-  if (!key) throw new Error('Add your free Gemini key in Settings to use photo recognition.')
+async function ask<T>(key: string, model: string, image: string | null, prompt: string, schema: object, temperature = 0.2): Promise<T> {
+  const m = image === null ? null : /^data:([^;]+);base64,(.+)$/.exec(image)
+  if (image !== null && !m) throw new Error('Could not read photo')
+  if (!key) throw new Error(`Add your free Gemini key in Settings to use ${image === null ? 'recipe ideas' : 'photo recognition'}.`)
+  const parts = m ? [{ inline_data: { mime_type: m[1], data: m[2] } }, { text: prompt }] : [{ text: prompt }]
   const body = JSON.stringify({
-    contents: [{ parts: [{ inline_data: { mime_type: m[1], data: m[2] } }, { text: prompt }] }],
-    generationConfig: { responseMimeType: 'application/json', responseSchema: schema, temperature: 0.2 },
+    contents: [{ parts }],
+    generationConfig: { responseMimeType: 'application/json', responseSchema: schema, temperature },
   })
 
   const models = [...new Set([model.trim() || FALLBACK_MODEL, FALLBACK_MODEL])]
@@ -74,8 +75,14 @@ async function ask<T>(key: string, model: string, image: string, prompt: string,
         }
         // 429 (this model's free limit), 404 (model retired) or still busy: try the backup model.
         if (i < models.length - 1) break
-        if (e.status === 429) throw new Error('Free daily photo limit reached. Enter the numbers by hand or try later.')
-        if (busy) throw new Error("Google's photo service is busy right now. Try again in a minute, or enter the numbers by hand.")
+        if (e.status === 429)
+          throw new Error(image === null ? 'Free daily Gemini limit reached. Try again later.' : 'Free daily photo limit reached. Enter the numbers by hand or try later.')
+        if (busy)
+          throw new Error(
+            image === null
+              ? "Google's AI service is busy right now. Try again in a minute."
+              : "Google's photo service is busy right now. Try again in a minute, or enter the numbers by hand.",
+          )
         throw e
       }
     }
@@ -137,6 +144,65 @@ ${muscles.join(', ')}. Add a one-sentence form cue.`,
       },
       required: ['equipment', 'exercises'],
     },
+  )
+}
+
+export interface Macros {
+  calories: number
+  protein: number
+  carbs: number
+  fat: number
+}
+
+export interface Recipe extends Macros {
+  name: string
+  meal: string
+  minutes: number
+  ingredients: string[]
+  steps: string[]
+}
+
+/** Meals that together fill what's left of today's targets. */
+export function suggestRecipes(key: string, model: string, left: Macros, request: string, avoid: string[]): Promise<{ recipes: Recipe[] }> {
+  const count = left.calories > 1600 ? 3 : left.calories > 800 ? 2 : 1
+  return ask<{ recipes: Recipe[] }>(
+    key,
+    model,
+    null,
+    `You are a sports nutritionist who cooks. Someone lifting weights still needs to eat, today:
+${Math.round(left.calories)} kcal, ${Math.round(left.protein)} g protein, ${Math.round(left.carbs)} g carbs, ${Math.round(left.fat)} g fat.
+Suggest ${count} simple, tasty recipe${count > 1 ? 's' : ''} that ${count > 1 ? 'together add up' : 'adds up'} as close as possible to those numbers. Protein matters most.
+Use everyday grocery-store ingredients and keep each to 30 minutes or less where possible.
+${request ? `They said: "${request}". Follow this.` : ''}
+${avoid.length ? `Don't repeat these: ${avoid.join(', ')}.` : ''}
+Give exact amounts for every ingredient (grams, cups, oz or count) so the macros are right for one serving.
+For each recipe give: name, meal (Breakfast, Lunch, Dinner or Snack), minutes, ingredients, short steps,
+and its calories and grams of protein, carbs and fat for the whole serving.`,
+    {
+      type: 'OBJECT',
+      properties: {
+        recipes: {
+          type: 'ARRAY',
+          items: {
+            type: 'OBJECT',
+            properties: {
+              name: { type: 'STRING' },
+              meal: { type: 'STRING' },
+              minutes: { type: 'NUMBER' },
+              ingredients: { type: 'ARRAY', items: { type: 'STRING' } },
+              steps: { type: 'ARRAY', items: { type: 'STRING' } },
+              calories: { type: 'NUMBER' },
+              protein: { type: 'NUMBER' },
+              carbs: { type: 'NUMBER' },
+              fat: { type: 'NUMBER' },
+            },
+            required: ['name', 'meal', 'minutes', 'ingredients', 'steps', 'calories', 'protein', 'carbs', 'fat'],
+          },
+        },
+      },
+      required: ['recipes'],
+    },
+    0.8,
   )
 }
 

@@ -50,15 +50,25 @@ export function WeightTab({ profile }: { profile: Profile }) {
               <span className="muted small">lb / week</span>
             </div>
             <div>
-              <strong>+{targets.targetRateLb.toFixed(2)}</strong>
+              <strong>
+                {targets.targetRateLb >= 0 ? '+' : '−'}
+                {Math.abs(targets.targetRateLb).toFixed(2)}
+              </strong>
               <span className="muted small">target / week</span>
             </div>
           </div>
           <p className="tip">{targets.coaching}</p>
+          {targets.custom ? (
+            <p className="muted small">
+              Your own targets, every day: {targets.calories} cal · {targets.protein}g protein · {targets.carbs}g carbs · {targets.fat}g fat.
+              Maintenance ≈ {targets.tdee} cal ({targets.tdeeSource === 'formula' ? 'formula estimate' : 'learned from your logs'}).
+            </p>
+          ) : (
           <p className="muted small">
             Rest-day plan: {targets.baseCalories} cal · {targets.protein}g protein · {targets.fat}g fat, rest from carbs. Lifting days add
             what the lift burned, as carbs. Rest-day maintenance ≈ {targets.tdee} cal ({targets.tdeeSource === 'formula' ? 'formula estimate until you have 2–3 weeks of data' : 'learned from your logs'}).
           </p>
+          )}
         </div>
       )}
 

@@ -13,9 +13,18 @@ export interface Profile {
   startWeightLb: number
   activity: number // TDEE multiplier, 1.2–1.9
   activityExcludesLifting?: boolean // true once `activity` means life outside the gym (see dailyActivity)
-  gainPctPerWeek: number // target bodyweight gain, % per week (lean bulk ≈ 0.25–0.5)
+  gainPctPerWeek: number // target bodyweight change, % per week (lean bulk ≈ 0.25–0.5; negative = cutting)
+  /** The user's own daily targets. When set, they replace the computed ones and stay the same every day. */
+  customTargets?: MacroTargets
   geminiKey: string
   geminiModel: string
+}
+
+export interface MacroTargets {
+  calories: number
+  protein: number
+  carbs: number
+  fat: number
 }
 
 export interface Food {
